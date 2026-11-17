@@ -15,7 +15,7 @@
   records: "$.items[*]"
   keyArgs: [namespace]
   echoKeyAs: namespaceKey
-  batchSafe: false
+  maxKeysPerCall: 1
   project:
     id: metadata.uid
     name: metadata.name
@@ -55,7 +55,7 @@
   records: "$.items[*]"
   keyArgs: [namespace]
   echoKeyAs: namespaceKey
-  batchSafe: false
+  maxKeysPerCall: 1
   project:
     id: metadata.uid
     name: metadata.name
@@ -80,7 +80,7 @@
   records: "$.items[*]"
   keyArgs: [namespace]
   echoKeyAs: namespaceKey
-  batchSafe: false
+  maxKeysPerCall: 1
   project:
     id: metadata.uid
     namespace: metadata.namespace

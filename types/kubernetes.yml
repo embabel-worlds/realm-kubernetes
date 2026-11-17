@@ -49,7 +49,7 @@
   virtualJoins:
     - anchorLabel: KubeNamespace
       relationship: HAS_POD
-      producerKeyFields: [name]
+      keyField: name
       recordKeyField: namespaceKey
       producer: kubePods
       maxFanoutTotal: 5000
@@ -105,7 +105,7 @@
   virtualJoins:
     - anchorLabel: KubeNamespace
       relationship: HAS_DEPLOYMENT
-      producerKeyFields: [name]
+      keyField: name
       recordKeyField: namespaceKey
       producer: kubeDeployments
       maxFanoutTotal: 2000
@@ -129,7 +129,7 @@
   virtualJoins:
     - anchorLabel: KubeNamespace
       relationship: HAS_EVENT
-      producerKeyFields: [name]
+      keyField: name
       recordKeyField: namespaceKey
       producer: kubeEvents
       maxFanoutTotal: 5000

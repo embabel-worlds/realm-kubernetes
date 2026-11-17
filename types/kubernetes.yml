@@ -1,0 +1,136 @@
+# A Kubernetes cluster, read live. Nothing here is stored: every node below is VIRTUAL, fetched from
+# the cluster's API for the namespace a query pins, and gone when the query ends.
+#
+#   KubeNamespace ─HAS_POD▶ KubePod ─HAS_CONTAINER▶ KubeContainer
+#                 ─HAS_DEPLOYMENT▶ KubeDeployment
+#                 ─HAS_EVENT▶ KubeEvent
+#
+# Which cluster is set once per world (KUBERNETES_API_SERVER), not per query.
+
+- name: KubeNamespace
+  visibility: internal
+  userAnchor: false
+  description: "A namespace of the cluster this world reads, as a door onto what runs in it. Pin it ONLY as one literal {name:'shop'} and traverse HAS_POD, HAS_DEPLOYMENT or HAS_EVENT. It is not stored and does not need to exist in the graph."
+  properties:
+    name: { identity: true, description: "The namespace's name. Identity." }
+
+- name: KubePod
+  description: "One pod, as the cluster reports it now: where it runs, the image and version it runs, whether it is ready, how often it has restarted, and why its container last stopped. Reached from (:KubeNamespace {name})-[:HAS_POD]->. The pod's FIRST container is described on the pod itself (image, ready, restarts, lastStopReason); every container is a KubeContainer through HAS_CONTAINER. `version` is what the pod's labels claim (app.kubernetes.io/version), and `imageDigest` is the exact image: the two things a running container is traced to its commit by."
+  properties:
+    id: { identity: true, description: "The pod's uid. Identity." }
+    name: "The pod's name."
+    namespace: "Its namespace."
+    app: "The application it belongs to: the label app.kubernetes.io/name, else `app`."
+    workload: "The Deployment (or other owner) that made it, by name."
+    ownerKind: "What owns the pod: ReplicaSet, StatefulSet, DaemonSet, Job."
+    ownerName: "The owner's name; for a Deployment's pod, the ReplicaSet of one rollout."
+    version: "The label app.kubernetes.io/version: what the pod says it is. Often the commit or the release."
+    image: "The image the first container was asked to run, as written: name and tag."
+    imageTag: "The tag of that image."
+    imageDigest: "The digest of the image actually running, `sha256:…`: which exact build."
+    imageId: "The image id as the node reports it."
+    node: "The node it runs on."
+    phase: "Pending, Running, Succeeded, Failed or Unknown."
+    ready: { type: boolean, description: "True when the first container passes its readiness check." }
+    restarts: { type: int, description: "How many times the first container has restarted." }
+    crashLooping: { type: boolean, description: "True when the container is waiting in CrashLoopBackOff." }
+    outOfMemory: { type: boolean, description: "True when the container was last stopped for exceeding its memory limit (OOMKilled)." }
+    waitingReason: "Why the container is not running now: CrashLoopBackOff, ImagePullBackOff, ContainerCreating. Empty when it is running."
+    waitingMessage: "The cluster's sentence for that."
+    runningSince: "When the current container started, if it is running."
+    lastStopReason: "Why the container last stopped: Error, OOMKilled, Completed. Empty if it never has."
+    lastExitCode: { type: int, description: "The exit code of that stop; 137 is a kill, usually for memory." }
+    lastStoppedAt: "When that was."
+    lastStopMessage: "The end of what the container wrote before it stopped, when the cluster kept it (at most 80 lines)."
+    memoryLimit: "The first container's memory limit, as written (`640Mi`)."
+    containers: { cardinality: LIST, description: "The names of the pod's containers." }
+    createdAt: "When the pod was created."
+    startedAt: "When it started."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_POD
+      producerKeyFields: [name]
+      recordKeyField: namespaceKey
+      producer: kubePods
+      maxFanoutTotal: 5000
+      description: "The pods of ONE namespace, as they are now: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_POD]->(p:KubePod)`."
+      brings:
+        - childType: KubeContainer
+          relationship: HAS_CONTAINER
+          records: "$.status.containerStatuses[*]"
+          id: containerID
+          project:
+            id: containerID
+            name: name
+            image: image
+            imageId: imageID
+            ready: ready
+            restarts: restartCount
+            waitingReason: state.waiting.reason
+            lastStopReason: lastState.terminated.reason
+            lastExitCode: lastState.terminated.exitCode
+            lastStoppedAt: lastState.terminated.finishedAt
+
+- name: KubeContainer
+  description: "One container of a pod, as the cluster reports it now. Reached ONLY from (:KubePod)-[:HAS_CONTAINER]->: the pod is where its name and namespace are."
+  properties:
+    id: { identity: true, description: "The container's runtime id. Identity." }
+    name: "The container's name in the pod."
+    image: "The image it runs."
+    imageId: "The image id, with its digest."
+    ready: { type: boolean, description: "True when it passes its readiness check." }
+    restarts: { type: int, description: "How many times it has restarted." }
+    waitingReason: "Why it is not running now; empty when it is."
+    lastStopReason: "Why it last stopped: Error, OOMKilled, Completed."
+    lastExitCode: { type: int, description: "The exit code of that stop." }
+    lastStoppedAt: "When that was."
+
+- name: KubeDeployment
+  description: "One Deployment: how many replicas it wants, how many are ready and how many run the newest rollout, and the image and version it is rolling out. Reached from (:KubeNamespace {name})-[:HAS_DEPLOYMENT]->. `rolledOut` false with updatedReplicas < replicas is a rollout in progress or stuck: old pods still serving beside new ones that are not ready."
+  properties:
+    id: { identity: true, description: "The deployment's uid. Identity." }
+    name: "The deployment's name."
+    namespace: "Its namespace."
+    app: "The application: the label app.kubernetes.io/name, else `app`."
+    version: "The version label on the pods it is rolling out now."
+    image: "The image it is rolling out now."
+    revision: "The rollout's number."
+    replicas: { type: int, description: "How many pods it wants." }
+    readyReplicas: { type: int, description: "How many are ready." }
+    updatedReplicas: { type: int, description: "How many run the newest rollout." }
+    availableReplicas: { type: int, description: "How many are available." }
+    unavailableReplicas: { type: int, description: "How many are not." }
+    rolledOut: { type: boolean, description: "True when every wanted pod runs the newest rollout and is ready." }
+    createdAt: "When it was created."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_DEPLOYMENT
+      producerKeyFields: [name]
+      recordKeyField: namespaceKey
+      producer: kubeDeployments
+      maxFanoutTotal: 2000
+      description: "The deployments of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_DEPLOYMENT]->(d:KubeDeployment)`."
+
+- name: KubeEvent
+  description: "One event the cluster recorded in a namespace: what it did or what went wrong, to which object, and how often. Reached from (:KubeNamespace {name})-[:HAS_EVENT]->. THE WINDOW: a cluster keeps events for about an hour, so this is recent history only. `isWarning` true is what went wrong: BackOff, Unhealthy, FailedScheduling, OOMKilling."
+  properties:
+    id: { identity: true, description: "The event's uid. Identity." }
+    namespace: "Its namespace."
+    type: "Normal or Warning."
+    isWarning: { type: boolean, description: "True for a Warning." }
+    reason: "The cluster's one-word reason: BackOff, Unhealthy, Pulled, Killing, ScalingReplicaSet."
+    message: "Its sentence."
+    count: { type: int, description: "How many times it has happened." }
+    involvedKind: "What it is about: Pod, Deployment, ReplicaSet, Node."
+    involvedName: "That object's name."
+    at: "When it last happened."
+    firstAt: "When it first happened."
+    source: "The component that reported it."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_EVENT
+      producerKeyFields: [name]
+      recordKeyField: namespaceKey
+      producer: kubeEvents
+      maxFanoutTotal: 5000
+      description: "The recent events of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_EVENT]->(e:KubeEvent)`."

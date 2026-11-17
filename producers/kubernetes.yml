@@ -1,0 +1,99 @@
+# Every producer is one LIST call on the cluster's API, keyed by a namespace, made when a query
+# reaches it. Nothing is stored and nothing is cached for long: this is the state of a running
+# system, and thirty seconds keeps a burst of questions to one call each without hiding a crash.
+#
+# `project:` lifts a nested field to a property. `compute:` says what a field means, as one Cypher
+# expression over the record (`r`): labels with dots in their names are read there.
+#
+# A pod's FIRST container is lifted onto the pod itself (image, restarts, why it last stopped),
+# because most services run one; every container is also a KubeContainer the HAS_CONTAINER edge
+# brings, for a pod with sidecars.
+
+- name: kubePods
+  kind: remote
+  operation: kubeListPods
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  batchSafe: false
+  project:
+    id: metadata.uid
+    name: metadata.name
+    namespace: metadata.namespace
+    createdAt: metadata.creationTimestamp
+    ownerKind: metadata.ownerReferences[0].kind
+    ownerName: metadata.ownerReferences[0].name
+    node: spec.nodeName
+    phase: status.phase
+    startedAt: status.startTime
+    containers: spec.containers[*].name
+    image: spec.containers[0].image
+    imageId: status.containerStatuses[0].imageID
+    ready: status.containerStatuses[0].ready
+    restarts: status.containerStatuses[0].restartCount
+    waitingReason: status.containerStatuses[0].state.waiting.reason
+    waitingMessage: status.containerStatuses[0].state.waiting.message
+    runningSince: status.containerStatuses[0].state.running.startedAt
+    lastStopReason: status.containerStatuses[0].lastState.terminated.reason
+    lastExitCode: status.containerStatuses[0].lastState.terminated.exitCode
+    lastStoppedAt: status.containerStatuses[0].lastState.terminated.finishedAt
+    lastStopMessage: status.containerStatuses[0].lastState.terminated.message
+    memoryLimit: spec.containers[0].resources.limits.memory
+  compute:
+    app: "coalesce(r.metadata.labels['app.kubernetes.io/name'], r.metadata.labels['app'], '')"
+    version: "coalesce(r.metadata.labels['app.kubernetes.io/version'], '')"
+    imageDigest: "CASE WHEN coalesce(r.imageId, '') CONTAINS 'sha256:' THEN 'sha256:' + last(split(r.imageId, 'sha256:')) ELSE '' END"
+    imageTag: "CASE WHEN last(split(coalesce(r.image, ''), '/')) CONTAINS ':' THEN last(split(r.image, ':')) ELSE '' END"
+    workload: "CASE WHEN r.ownerKind = 'ReplicaSet' AND r.ownerName CONTAINS '-' THEN substring(r.ownerName, 0, size(r.ownerName) - size(last(split(r.ownerName, '-'))) - 1) ELSE coalesce(r.ownerName, '') END"
+    crashLooping: "coalesce(r.waitingReason, '') = 'CrashLoopBackOff'"
+    outOfMemory: "coalesce(r.lastStopReason, '') = 'OOMKilled'"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+- name: kubeDeployments
+  kind: remote
+  operation: kubeListDeployments
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  batchSafe: false
+  project:
+    id: metadata.uid
+    name: metadata.name
+    namespace: metadata.namespace
+    createdAt: metadata.creationTimestamp
+    replicas: spec.replicas
+    readyReplicas: status.readyReplicas
+    updatedReplicas: status.updatedReplicas
+    availableReplicas: status.availableReplicas
+    unavailableReplicas: status.unavailableReplicas
+    image: spec.template.spec.containers[0].image
+  compute:
+    app: "coalesce(r.metadata.labels['app.kubernetes.io/name'], r.metadata.labels['app'], '')"
+    version: "coalesce(r.spec.template.metadata.labels['app.kubernetes.io/version'], '')"
+    revision: "coalesce(r.metadata.annotations['deployment.kubernetes.io/revision'], '')"
+    rolledOut: "coalesce(r.updatedReplicas, 0) = coalesce(r.replicas, 0) AND coalesce(r.readyReplicas, 0) = coalesce(r.replicas, 0)"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+- name: kubeEvents
+  kind: remote
+  operation: kubeListEvents
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  batchSafe: false
+  project:
+    id: metadata.uid
+    namespace: metadata.namespace
+    type: type
+    reason: reason
+    message: message
+    count: count
+    involvedKind: involvedObject.kind
+    involvedName: involvedObject.name
+    firstAt: firstTimestamp
+    lastAt: lastTimestamp
+    source: source.component
+  compute:
+    at: "coalesce(r.lastAt, r.eventTime, r.firstAt, r.metadata.creationTimestamp)"
+    isWarning: "r.type = 'Warning'"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }

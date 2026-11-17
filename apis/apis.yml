@@ -1,0 +1,23 @@
+# One API: the cluster's own, read-only. The spec is vendored and small on purpose: five list calls,
+# written by hand from the API reference (kubernetes.json). `server-variables` says which cluster
+# THIS world reads, from KUBERNETES_API_SERVER, which keys.yml asks for when the realm is installed.
+#
+# Auth is a service account's bearer token. Give that account the built-in `view` role in the
+# namespaces it should read, and nothing more: `view` cannot read Secrets and cannot change anything.
+#
+# OperationIds are prefixed `kube`: they resolve globally across installed realms.
+- url: kubernetes.json
+  name: kubernetes
+  type: openapi
+  auth: bearer
+  token-env: KUBERNETES_TOKEN
+  headers:
+    Accept: "application/json"
+  server-variables:
+    server: ${KUBERNETES_API_SERVER}
+  operation-ids:
+    - kubeListNamespaces
+    - kubeListPods
+    - kubeListEvents
+    - kubeListDeployments
+    - kubeListReplicaSets

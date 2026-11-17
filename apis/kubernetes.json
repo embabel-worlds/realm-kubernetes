@@ -1,0 +1,317 @@
+{
+ "openapi": "3.0.3",
+ "info": {
+  "title": "Kubernetes API, the read-only part this realm calls",
+  "version": "1.31",
+  "description": "Five list operations of the Kubernetes API, written by hand from the API reference. The cluster's own /openapi/v3 is far larger; a realm names the calls it makes."
+ },
+ "servers": [
+  {
+   "url": "{server}",
+   "description": "The cluster's API server.",
+   "variables": {
+    "server": {
+     "default": "https://kubernetes.default.svc",
+     "description": "The API server's URL, e.g. https://10.0.0.1:6443."
+    }
+   }
+  }
+ ],
+ "paths": {
+  "/api/v1/namespaces": {
+   "get": {
+    "operationId": "kubeListNamespaces",
+    "summary": "Every namespace.",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/namespaces/{namespace}/pods": {
+   "get": {
+    "operationId": "kubeListPods",
+    "summary": "The pods of one namespace, with each container's status.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/namespaces/{namespace}/events": {
+   "get": {
+    "operationId": "kubeListEvents",
+    "summary": "The events of one namespace: what the cluster did and what went wrong.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/apis/apps/v1/namespaces/{namespace}/deployments": {
+   "get": {
+    "operationId": "kubeListDeployments",
+    "summary": "The deployments of one namespace, with replica counts.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/apis/apps/v1/namespaces/{namespace}/replicasets": {
+   "get": {
+    "operationId": "kubeListReplicaSets",
+    "summary": "The replica sets of one namespace: one per rollout of a deployment.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "List": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string"
+     },
+     "apiVersion": {
+      "type": "string"
+     },
+     "metadata": {
+      "type": "object",
+      "properties": {
+       "resourceVersion": {
+        "type": "string"
+       },
+       "continue": {
+        "type": "string"
+       }
+      }
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "metadata": {
+         "type": "object"
+        },
+        "spec": {
+         "type": "object"
+        },
+        "status": {
+         "type": "object"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

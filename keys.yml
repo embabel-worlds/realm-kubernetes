@@ -1,0 +1,16 @@
+# Which cluster, and the read-only token to read it with. The address is not a secret, but it is
+# what differs between installs, so it is asked for like a key and kept in the wallet.
+- name: kubernetes
+  displayName: Kubernetes cluster
+  description: The cluster this world reads, and a read-only service account's token.
+  getKeyUrl: https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/
+  fields:
+    - variable: KUBERNETES_API_SERVER
+      displayName: API server URL (e.g. https://10.0.0.1:6443)
+      secret: false
+    - variable: KUBERNETES_TOKEN
+      displayName: A service account token bound to the built-in `view` role
+      secret: true
+  validate:
+    api: kubernetes
+    operation: kubeListNamespaces

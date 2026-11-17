@@ -79,3 +79,27 @@
            e.count AS times, e.message AS message
     ORDER BY at DESC
     LIMIT $limit
+
+- name: KubeLogFailures
+  description: >-
+    SELECT THIS for "what is failing in this namespace", "which exceptions are the pods logging",
+    "why is this pod crashing". The failures the pods of a namespace logged, the same failure
+    counted once: the exception, its root cause, how many times, on how many pods, at which
+    versions, and whether it is in running containers or in ones that crashed. Read from the
+    cluster now; the last 5,000 lines of each pod.
+  params:
+    namespace: { type: string, description: "The namespace." }
+    app: { type: string, default: "", description: "Only pods of this application (the app label). Empty for all." }
+  cypher: |
+    MATCH (n:KubeNamespace {name: $namespace})-[:HAS_POD]->(p:KubePod)
+    WHERE $app = '' OR p.app = $app
+    CALL {
+      WITH p MATCH (p)-[:HAS_LOG_EVENT]->(e:KubeLogEvent {hasTrace: true}) RETURN e
+      UNION
+      WITH p MATCH (p)-[:HAS_PREVIOUS_LOG_EVENT]->(e:KubeLogEvent {hasTrace: true}) RETURN e
+    }
+    RETURN e.fingerprint AS fingerprint, e.exception AS exception, e.rootCause AS rootCause,
+           head(collect(e.exceptionMessage)) AS message, count(e) AS occurrences,
+           count(DISTINCT p.name) AS pods, collect(DISTINCT p.version) AS versions,
+           collect(DISTINCT e.container) AS containers, max(e.timestamp) AS lastSeen
+    ORDER BY occurrences DESC

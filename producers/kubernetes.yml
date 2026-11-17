@@ -45,6 +45,7 @@
     imageDigest: "CASE WHEN coalesce(r.imageId, '') CONTAINS 'sha256:' THEN 'sha256:' + last(split(r.imageId, 'sha256:')) ELSE '' END"
     imageTag: "CASE WHEN last(split(coalesce(r.image, ''), '/')) CONTAINS ':' THEN last(split(r.image, ':')) ELSE '' END"
     workload: "CASE WHEN r.ownerKind = 'ReplicaSet' AND r.ownerName CONTAINS '-' THEN substring(r.ownerName, 0, size(r.ownerName) - size(last(split(r.ownerName, '-'))) - 1) ELSE coalesce(r.ownerName, '') END"
+    logKey: "r.metadata.namespace + '/' + r.metadata.name"
     crashLooping: "coalesce(r.waitingReason, '') = 'CrashLoopBackOff'"
     outOfMemory: "coalesce(r.lastStopReason, '') = 'OOMKilled'"
   cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
@@ -96,4 +97,48 @@
   compute:
     at: "coalesce(r.lastAt, r.eventTime, r.firstAt, r.metadata.creationTimestamp)"
     isWarning: "r.type = 'Warning'"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+# What a pod's first container wrote, read from the cluster when a query reaches it and split into
+# log events by the appliance's own log reader (`body: events`): a logged exception and its whole
+# trace are one event, with a fingerprint that counts the same failure across pods. Nothing is
+# copied. The last 5,000 lines are read: `tailLines` bounds what the cluster sends.
+#
+#   kubePodLogs          the container running now
+#   kubePreviousPodLogs  the container before the last restart: what a crashed container wrote.
+#                        A pod that has never restarted has none, which is an empty answer.
+- name: kubePodLogs
+  kind: remote
+  operation: kubeReadPodLog
+  keyArgs: [namespace, name]
+  echoKeyAs: podKey
+  maxKeysPerCall: 1
+  body: events
+  records: "$[*]"
+  args:
+    tailLines: 5000
+  compute:
+    id: "r.podKey + '#current#' + toString(r.line)"
+    container: "'current'"
+    pod: "last(split(r.podKey, '/'))"
+    namespace: "split(r.podKey, '/')[0]"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+- name: kubePreviousPodLogs
+  kind: remote
+  operation: kubeReadPodLog
+  keyArgs: [namespace, name]
+  echoKeyAs: podKey
+  maxKeysPerCall: 1
+  body: events
+  records: "$[*]"
+  args:
+    tailLines: 5000
+    previous: true
+  emptyErrorPatterns: ["previous terminated container", "not found"]
+  compute:
+    id: "r.podKey + '#previous#' + toString(r.line)"
+    container: "'previous'"
+    pod: "last(split(r.podKey, '/'))"
+    namespace: "split(r.podKey, '/')[0]"
   cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }

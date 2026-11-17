@@ -3,7 +3,7 @@
  "info": {
   "title": "Kubernetes API, the read-only part this realm calls",
   "version": "1.31",
-  "description": "Five list operations of the Kubernetes API, written by hand from the API reference. The cluster's own /openapi/v3 is far larger; a realm names the calls it makes."
+  "description": "Five list operations and one log read of the Kubernetes API, written by hand from the API reference. The cluster's own /openapi/v3 is far larger; a realm names the calls it makes."
  },
  "servers": [
   {
@@ -263,6 +263,91 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/namespaces/{namespace}/pods/{name}/log": {
+   "get": {
+    "operationId": "kubeReadPodLog",
+    "summary": "What a pod's container wrote, as text. `previous` reads the container before the last restart.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "container",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "previous",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "The container that ran before the last restart: what a crashed container wrote."
+     },
+     {
+      "name": "tailLines",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "limitBytes",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "sinceSeconds",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "timestamps",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The log, as text.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
         }
        }
       }

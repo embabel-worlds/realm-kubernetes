@@ -4,6 +4,8 @@
 #   KubeNamespace ─HAS_POD▶ KubePod ─HAS_CONTAINER▶ KubeContainer
 #                 ─HAS_DEPLOYMENT▶ KubeDeployment
 #                 ─HAS_EVENT▶ KubeEvent
+#   KubePod ─HAS_LOG_EVENT▶ KubeLogEvent            (what the running container wrote)
+#           ─HAS_PREVIOUS_LOG_EVENT▶ KubeLogEvent   (what the container before the last restart wrote)
 #
 # Which cluster is set once per world (KUBERNETES_API_SERVER), not per query.
 
@@ -33,6 +35,7 @@
     phase: "Pending, Running, Succeeded, Failed or Unknown."
     ready: { type: boolean, description: "True when the first container passes its readiness check." }
     restarts: { type: int, description: "How many times the first container has restarted." }
+    logKey: "`<namespace>/<name>`: what the pod's log is read by."
     crashLooping: { type: boolean, description: "True when the container is waiting in CrashLoopBackOff." }
     outOfMemory: { type: boolean, description: "True when the container was last stopped for exceeding its memory limit (OOMKilled)." }
     waitingReason: "Why the container is not running now: CrashLoopBackOff, ImagePullBackOff, ContainerCreating. Empty when it is running."
@@ -134,3 +137,35 @@
       producer: kubeEvents
       maxFanoutTotal: 5000
       description: "The recent events of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_EVENT]->(e:KubeEvent)`."
+
+- name: KubeLogEvent
+  visibility: internal
+  userAnchor: false
+  description: "One event in a pod's log, read from the cluster when a query reaches it: from a line that starts an event to the next, so a logged exception is one event with its whole trace. Reached from a KubePod by HAS_LOG_EVENT (the container running now) or HAS_PREVIOUS_LOG_EVENT (the container before the last restart, which is where a crash is). `fingerprint` is the same for the same failure, so it can be counted across pods. The last 5,000 lines of the first container are read."
+  properties:
+    id: { identity: true, description: "`<namespace>/<pod>#<current|previous>#<line>`. Identity." }
+    podKey: "`<namespace>/<pod>`."
+    pod: "The pod's name."
+    namespace: "Its namespace."
+    container: { type: string, description: "current: the container running now. previous: the one before the last restart.", values: [current, previous] }
+    line: { type: int, description: "First line of the event in what was read." }
+    endLine: { type: int, description: "Last line of the event." }
+    content: "The event's whole text."
+    timestamp: "When, as the log wrote it."
+    level: "The level as written."
+    severity: "The level on one scale: ERROR, WARN, INFO, DEBUG, TRACE."
+    thread: "The thread, where the layout shows it."
+    logger: "The logger, where the layout shows it."
+    message: "The message on the event's first line."
+    hasTrace: { type: boolean, description: "True when the event logged a stack trace." }
+    exception: "The exception thrown, where the event logged one."
+    exceptionMessage: "Its message."
+    rootCause: "The exception at the bottom of the cause chain."
+    causes: { cardinality: LIST, description: "The causes, in order." }
+    frameCount: { type: int, description: "Frames printed across the trace." }
+    fingerprint: "The same for the same thrown and root exceptions at the same frames."
+  virtualJoins:
+    - { anchorLabel: KubePod, relationship: HAS_LOG_EVENT, keyField: logKey, recordKeyField: podKey, producer: kubePodLogs, maxAnchors: 50, maxFanoutTotal: 100000,
+        description: "What the pod's running container wrote: `MATCH (n:KubeNamespace {name:$ns})-[:HAS_POD]->(p:KubePod)-[:HAS_LOG_EVENT]->(e:KubeLogEvent)`; narrow with `{hasTrace: true}` or `{severity: 'ERROR'}`." }
+    - { anchorLabel: KubePod, relationship: HAS_PREVIOUS_LOG_EVENT, keyField: logKey, recordKeyField: podKey, producer: kubePreviousPodLogs, maxAnchors: 50, maxFanoutTotal: 100000,
+        description: "What the container before the last restart wrote: where a crashed pod's failure is." }

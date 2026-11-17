@@ -24,3 +24,4 @@
     - kubeListEvents
     - kubeListDeployments
     - kubeListReplicaSets
+    - kubeReadPodLog

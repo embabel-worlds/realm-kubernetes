@@ -94,9 +94,9 @@
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_POD]->(p:KubePod)
     WHERE $app = '' OR p.app = $app
     CALL {
-      WITH p MATCH (p)-[:HAS_LOG_EVENT]->(e:KubeLogEvent {hasTrace: true}) RETURN e
+      WITH p MATCH (p)-[:HAS_LOG_EVENT]->(now:KubeLogEvent {hasTrace: true}) RETURN now AS e
       UNION
-      WITH p MATCH (p)-[:HAS_PREVIOUS_LOG_EVENT]->(e:KubeLogEvent {hasTrace: true}) RETURN e
+      WITH p MATCH (p)-[:HAS_PREVIOUS_LOG_EVENT]->(before:KubeLogEvent {hasTrace: true}) RETURN before AS e
     }
     RETURN e.fingerprint AS fingerprint, e.exception AS exception, e.rootCause AS rootCause,
            head(collect(e.exceptionMessage)) AS message, count(e) AS occurrences,

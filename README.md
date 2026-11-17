@@ -1,5 +1,7 @@
 # realm-kubernetes
 
+> **Experimental.** This realm is new and still changing: types, views and parameters may change without notice, and it has been run on few systems. Check its answers before relying on them.
+
 A Kubernetes cluster as a graph you can query, read live from the cluster's own API when a question
 reaches it. Nothing is copied into the graph: a pod lives for minutes.
 

@@ -1,0 +1,72 @@
+# realm-kubernetes
+
+A Kubernetes cluster as a graph you can query, read live from the cluster's own API when a question
+reaches it. Nothing is copied into the graph: a pod lives for minutes.
+
+```cypher
+MATCH (n:KubeNamespace {name: 'shop'})-[:HAS_POD]->(p:KubePod)
+WHERE p.crashLooping
+RETURN p.name, p.version, p.restarts, p.lastStopReason, p.lastExitCode
+```
+
+```
+KubeNamespace ─HAS_POD▶ KubePod ─HAS_CONTAINER▶ KubeContainer
+              ─HAS_DEPLOYMENT▶ KubeDeployment
+              ─HAS_EVENT▶ KubeEvent
+```
+
+Read-only. It makes five list calls and nothing else; it never changes the cluster and never reads
+a Secret.
+
+## Views
+
+| view | question |
+|---|---|
+| `KubeRunning(namespace)` | what is running, by application and version: image, pods, ready, restarted, crash-looping |
+| `KubeIsRunning(namespace, version)` | is this commit, release or image digest running anywhere, and on how many pods |
+| `KubeCrashes(namespace)` | which pods restarted or are not ready, and why: stop reason, exit code, out of memory, memory limit |
+| `KubeDeployments(namespace)` | wanted, ready and updated replicas; whether a rollout is stuck |
+| `KubeWarnings(namespace)` | what the cluster says went wrong lately |
+
+Two rows for one application in `KubeRunning` are two versions side by side: a rollout in progress,
+or one that is stuck.
+
+## Setup
+
+Two settings, asked for on install (or set in the world's `data/secrets.env`):
+
+- `KUBERNETES_API_SERVER`: the API server's URL.
+- `KUBERNETES_TOKEN`: a service account's token.
+
+Give the account the built-in `view` role, which cannot change anything and cannot read Secrets:
+
+```sh
+kubectl create serviceaccount embabel-reader -n shop
+kubectl create clusterrolebinding embabel-reader-view --clusterrole=view --serviceaccount=shop:embabel-reader
+kubectl create token embabel-reader -n shop --duration=720h
+```
+
+## Tracing a pod to its commit
+
+A pod carries `imageDigest` (the exact image running) and `version` (the label
+`app.kubernetes.io/version`). Label a deployment's pods with the commit they were built from and
+`KubeIsRunning` answers "is this commit running anywhere".
+
+## Limits
+
+- **The cluster's certificate authority cannot be given to the realm yet.** A cluster's API is
+  signed by the cluster's own CA, which the appliance does not trust. Until a realm's API can name
+  a CA, put the CA in the appliance's trust store, or reach the cluster through something whose
+  certificate is publicly trusted.
+- **Pod logs are not read.** `KubeCrashes` shows the last lines the cluster kept, which is too
+  short for a Java stack trace.
+- A pod's first container is described on the pod; the others are `KubeContainer`s.
+- The cluster keeps about an hour of events.
+- One cluster per world.
+
+## Verified
+
+Against a k3s cluster running two versions of an application, one crash-looping: every figure in
+`KubeRunning`, `KubeCrashes`, `KubeIsRunning` and `KubeDeployments` equalled what `kubectl` reported
+(pods per version, ready, restart count, waiting reason, wanted/ready/updated replicas), and the
+read-only token was refused when asked for Secrets.

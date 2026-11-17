@@ -37,6 +37,10 @@ Two settings, asked for on install (or set in the world's `data/secrets.env`):
 
 - `KUBERNETES_API_SERVER`: the API server's URL.
 - `KUBERNETES_TOKEN`: a service account's token.
+- `KUBERNETES_CA_CERT`: the cluster's certificate authority, when its API is signed by its own
+  (most are). Paste `certificate-authority-data` from a kubeconfig as it is, or a PEM certificate.
+  It is trusted for this realm's calls to the cluster and for nothing else. Needs an appliance that
+  reads `ca-cert` on an API (embabel/me, November 2026).
 
 Give the account the built-in `view` role, which cannot change anything and cannot read Secrets:
 
@@ -54,10 +58,6 @@ A pod carries `imageDigest` (the exact image running) and `version` (the label
 
 ## Limits
 
-- **The cluster's certificate authority cannot be given to the realm yet.** A cluster's API is
-  signed by the cluster's own CA, which the appliance does not trust. Until a realm's API can name
-  a CA, put the CA in the appliance's trust store, or reach the cluster through something whose
-  certificate is publicly trusted.
 - **Pod logs are not read.** `KubeCrashes` shows the last lines the cluster kept, which is too
   short for a Java stack trace.
 - A pod's first container is described on the pod; the others are `KubeContainer`s.

@@ -11,6 +11,10 @@
     - variable: KUBERNETES_TOKEN
       displayName: A service account token bound to the built-in `view` role
       secret: true
+    - variable: KUBERNETES_CA_CERT
+      displayName: The cluster's certificate authority (certificate-authority-data from a kubeconfig, or PEM); leave empty for a publicly signed API
+      secret: false
+      optional: true
   validate:
     api: kubernetes
     operation: kubeListNamespaces

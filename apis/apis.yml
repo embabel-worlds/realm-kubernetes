@@ -15,6 +15,9 @@
     Accept: "application/json"
   server-variables:
     server: ${KUBERNETES_API_SERVER}
+  # The cluster's own certificate authority, trusted for this API's calls alone. Unset, the
+  # appliance's ordinary trust applies, which is right for a cluster behind a public certificate.
+  ca-cert: ${KUBERNETES_CA_CERT}
   operation-ids:
     - kubeListNamespaces
     - kubeListPods

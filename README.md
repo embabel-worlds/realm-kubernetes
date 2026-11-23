@@ -13,11 +13,13 @@ RETURN p.name, p.version, p.restarts, p.lastStopReason, p.lastExitCode
 
 ```
 KubeNamespace ─HAS_POD▶ KubePod ─HAS_CONTAINER▶ KubeContainer
+                                 ─HAS_LOG_EVENT▶ KubeLogEvent
+                                 ─HAS_PREVIOUS_LOG_EVENT▶ KubeLogEvent
               ─HAS_DEPLOYMENT▶ KubeDeployment
               ─HAS_EVENT▶ KubeEvent
 ```
 
-Read-only. It makes five list calls and nothing else; it never changes the cluster and never reads
+Read-only. It makes list calls and reads pod logs, and nothing else; it never changes the cluster and never reads
 a Secret.
 
 ## Views
@@ -60,8 +62,10 @@ A pod carries `imageDigest` (the exact image running) and `version` (the label
 
 ## Limits
 
-- **Pod logs are not read.** `KubeCrashes` shows the last lines the cluster kept, which is too
-  short for a Java stack trace.
+- **A pod's log is read as far back as its last 5,000 lines**, for its first container: the one
+  running now (`HAS_LOG_EVENT`) and the one before its last restart (`HAS_PREVIOUS_LOG_EVENT`), as
+  `KubeLogEvent`s, one per logged event with its whole stack trace. Older lines, and the logs of a
+  pod that is gone, are the log store's to answer (realm-elastic-logs).
 - A pod's first container is described on the pod; the others are `KubeContainer`s.
 - The cluster keeps about an hour of events.
 - One cluster per world.

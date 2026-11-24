@@ -127,7 +127,7 @@
     id: { identity: true, description: "The event's uid. Identity." }
     namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
     type: { type: string, description: "Normal or Warning, as Kubernetes classifies the event.", values: [Normal, Warning] }
-    isWarning: { type: boolean, description: "True for a Warning." }
+    isWarning: { type: boolean, description: "True for a Warning. Filter on `type = 'Warning'` instead where it matters: that is sent to the cluster, this is not." }
     reason: "The cluster's one-word reason: BackOff, Unhealthy, Pulled, Killing, ScalingReplicaSet."
     message: "Its sentence."
     count: { type: int, description: "How many times it has happened." }

@@ -17,14 +17,21 @@
     name: { identity: true, description: "The namespace's name. Identity." }
 
 - name: KubePod
-  description: "One pod, as the cluster reports it now: where it runs, the image and version it runs, whether it is ready, how often it has restarted, and why its container last stopped. Reached from (:KubeNamespace {name})-[:HAS_POD]->. The pod's FIRST container is described on the pod itself (image, ready, restarts, lastStopReason); every container is a KubeContainer through HAS_CONTAINER. `version` is what the pod's labels claim (app.kubernetes.io/version), and `imageDigest` is the exact image: the two things a running container is traced to its commit by."
+  description: "One pod as the cluster reports it now, identified by its uid (`id`); `name` is unique within its namespace. Where it runs, the image and version it runs, whether it is ready, how often it has restarted, and why its container last stopped. Reached from (:KubeNamespace {name})-[:HAS_POD]->. The pod's FIRST container is described on the pod itself (image, ready, restarts, lastStopReason); every container is a KubeContainer through HAS_CONTAINER. `version` is what the pod's labels claim (app.kubernetes.io/version), and `imageDigest` is the exact image: the two things a running container is traced to its commit by."
+  examples:
+    # Pin the namespace as one literal; everything else filters the pods it brings.
+    - q: "which cart pods in shop are crash-looping, and on which version"
+      cypher: |
+        MATCH (n:KubeNamespace {name: 'shop'})-[:HAS_POD]->(p:KubePod)
+        WHERE p.app = 'cart' AND p.crashLooping
+        RETURN p.name AS pod, p.version AS version, p.restarts AS restarts, p.lastStopReason AS lastStopReason
   properties:
     id: { identity: true, description: "The pod's uid. Identity." }
     name: "The pod's name."
-    namespace: "Its namespace."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
     app: "The application it belongs to: the label app.kubernetes.io/name, else `app`."
     workload: "The Deployment (or other owner) that made it, by name."
-    ownerKind: "What owns the pod: ReplicaSet, StatefulSet, DaemonSet, Job."
+    ownerKind: "The kind of the pod's first owner, as Kubernetes names it: ReplicaSet (a Deployment's), StatefulSet, DaemonSet, Job, Node (a static pod); not exhaustive. Empty for a bare pod."
     ownerName: "The owner's name; for a Deployment's pod, the ReplicaSet of one rollout."
     version: "The label app.kubernetes.io/version: what the pod says it is. Often the commit or the release."
     image: "The image the first container was asked to run, as written: name and tag."
@@ -32,7 +39,7 @@
     imageDigest: "The digest of the image actually running, `sha256:…`: which exact build."
     imageId: "The image id as the node reports it."
     node: "The node it runs on."
-    phase: "Pending, Running, Succeeded, Failed or Unknown."
+    phase: { type: string, description: "The pod's lifecycle phase, exactly as Kubernetes reports it.", values: [Pending, Running, Succeeded, Failed, Unknown] }
     ready: { type: boolean, description: "True when the first container passes its readiness check." }
     restarts: { type: int, description: "How many times the first container has restarted." }
     logKey: "`<namespace>/<name>`: what the pod's log is read by."
@@ -40,15 +47,15 @@
     outOfMemory: { type: boolean, description: "True when the container was last stopped for exceeding its memory limit (OOMKilled)." }
     waitingReason: "Why the container is not running now: CrashLoopBackOff, ImagePullBackOff, ContainerCreating. Empty when it is running."
     waitingMessage: "The cluster's sentence for that."
-    runningSince: "When the current container started, if it is running."
+    runningSince: "When the current container started, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z); empty unless it is running."
     lastStopReason: "Why the container last stopped: Error, OOMKilled, Completed. Empty if it never has."
     lastExitCode: { type: int, description: "The exit code of that stop; 137 is a kill, usually for memory." }
-    lastStoppedAt: "When that was."
+    lastStoppedAt: "When the first container last stopped, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z); empty if it never has."
     lastStopMessage: "The end of what the container wrote before it stopped, when the cluster kept it (at most 80 lines)."
     memoryLimit: "The first container's memory limit, as written (`640Mi`)."
     containers: { cardinality: LIST, description: "The names of the pod's containers." }
-    createdAt: "When the pod was created."
-    startedAt: "When it started."
+    createdAt: "When the cluster created the pod object, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z)."
+    startedAt: "When the kubelet acknowledged the pod on its node, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z); empty while unscheduled."
   virtualJoins:
     - anchorLabel: KubeNamespace
       relationship: HAS_POD
@@ -75,7 +82,7 @@
             lastStoppedAt: lastState.terminated.finishedAt
 
 - name: KubeContainer
-  description: "One container of a pod, as the cluster reports it now. Reached ONLY from (:KubePod)-[:HAS_CONTAINER]->: the pod is where its name and namespace are."
+  description: "One container of a pod as the cluster reports it now, identified by its runtime id (`id`); `name` is unique within the pod. Reached ONLY from (:KubePod)-[:HAS_CONTAINER]->: the pod is where its name and namespace are."
   properties:
     id: { identity: true, description: "The container's runtime id. Identity." }
     name: "The container's name in the pod."
@@ -86,14 +93,14 @@
     waitingReason: "Why it is not running now; empty when it is."
     lastStopReason: "Why it last stopped: Error, OOMKilled, Completed."
     lastExitCode: { type: int, description: "The exit code of that stop." }
-    lastStoppedAt: "When that was."
+    lastStoppedAt: "When it last stopped, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z); empty if it never has."
 
 - name: KubeDeployment
-  description: "One Deployment: how many replicas it wants, how many are ready and how many run the newest rollout, and the image and version it is rolling out. Reached from (:KubeNamespace {name})-[:HAS_DEPLOYMENT]->. `rolledOut` false with updatedReplicas < replicas is a rollout in progress or stuck: old pods still serving beside new ones that are not ready."
+  description: "One Deployment, identified by its uid (`id`); `name` is unique within its namespace. How many replicas it wants, how many are ready and how many run the newest rollout, and the image and version it is rolling out. Reached from (:KubeNamespace {name})-[:HAS_DEPLOYMENT]->. `rolledOut` false with updatedReplicas < replicas is a rollout in progress or stuck: old pods still serving beside new ones that are not ready."
   properties:
     id: { identity: true, description: "The deployment's uid. Identity." }
     name: "The deployment's name."
-    namespace: "Its namespace."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
     app: "The application: the label app.kubernetes.io/name, else `app`."
     version: "The version label on the pods it is rolling out now."
     image: "The image it is rolling out now."
@@ -104,7 +111,7 @@
     availableReplicas: { type: int, description: "How many are available." }
     unavailableReplicas: { type: int, description: "How many are not." }
     rolledOut: { type: boolean, description: "True when every wanted pod runs the newest rollout and is ready." }
-    createdAt: "When it was created."
+    createdAt: "When the cluster created the deployment object, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z)."
   virtualJoins:
     - anchorLabel: KubeNamespace
       relationship: HAS_DEPLOYMENT
@@ -115,19 +122,19 @@
       description: "The deployments of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_DEPLOYMENT]->(d:KubeDeployment)`."
 
 - name: KubeEvent
-  description: "One event the cluster recorded in a namespace: what it did or what went wrong, to which object, and how often. Reached from (:KubeNamespace {name})-[:HAS_EVENT]->. THE WINDOW: a cluster keeps events for about an hour, so this is recent history only. `isWarning` true is what went wrong: BackOff, Unhealthy, FailedScheduling, OOMKilling."
+  description: "One event the cluster recorded in a namespace, identified by its uid (`id`): what it did or what went wrong, to which object, and how often. Reached from (:KubeNamespace {name})-[:HAS_EVENT]->. THE WINDOW: a cluster keeps events for about an hour, so this is recent history only. `isWarning` true is what went wrong: BackOff, Unhealthy, FailedScheduling, OOMKilling."
   properties:
     id: { identity: true, description: "The event's uid. Identity." }
-    namespace: "Its namespace."
-    type: "Normal or Warning."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
+    type: { type: string, description: "Normal or Warning, as Kubernetes classifies the event.", values: [Normal, Warning] }
     isWarning: { type: boolean, description: "True for a Warning." }
     reason: "The cluster's one-word reason: BackOff, Unhealthy, Pulled, Killing, ScalingReplicaSet."
     message: "Its sentence."
     count: { type: int, description: "How many times it has happened." }
-    involvedKind: "What it is about: Pod, Deployment, ReplicaSet, Node."
+    involvedKind: "The kind of object the event is about, as Kubernetes names it: Pod, Deployment, ReplicaSet, Node, Job and others; not exhaustive."
     involvedName: "That object's name."
-    at: "When it last happened."
-    firstAt: "When it first happened."
+    at: "When it last happened, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z): lastTimestamp, else eventTime, else when the event was created."
+    firstAt: "When it first happened, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z); empty for events reported only by eventTime."
     source: "The component that reported it."
   virtualJoins:
     - anchorLabel: KubeNamespace
@@ -141,25 +148,33 @@
 - name: KubeLogEvent
   visibility: internal
   userAnchor: false
-  description: "One event in a pod's log, read from the cluster when a query reaches it: from a line that starts an event to the next, so a logged exception is one event with its whole trace. Reached from a KubePod by HAS_LOG_EVENT (the container running now) or HAS_PREVIOUS_LOG_EVENT (the container before the last restart, which is where a crash is). `fingerprint` is the same for the same failure, so it can be counted across pods. The last 5,000 lines of the first container are read."
+  description: "One event in a pod's log, identified by id `<namespace>/<pod>#<current|previous>#<line>`, read from the cluster when a query reaches it: from a line that starts an event to the next, so a logged exception is one event with its whole trace. Reached from a KubePod by HAS_LOG_EVENT (the container running now) or HAS_PREVIOUS_LOG_EVENT (the container before the last restart, which is where a crash is). `fingerprint` is the same for the same failure, so it can be counted across pods. The last 5,000 lines of the first container are read."
+  examples:
+    # A crash is in the PREVIOUS container's log: read both edges, and count by fingerprint.
+    - q: "what exceptions did the crashed cart pods in shop log"
+      cypher: |
+        MATCH (n:KubeNamespace {name: 'shop'})-[:HAS_POD]->(p:KubePod {app: 'cart'})
+        MATCH (p)-[:HAS_PREVIOUS_LOG_EVENT]->(e:KubeLogEvent {hasTrace: true})
+        RETURN e.exception AS exception, e.rootCause AS rootCause, count(*) AS occurrences, count(DISTINCT p.name) AS pods
+        ORDER BY occurrences DESC
   properties:
     id: { identity: true, description: "`<namespace>/<pod>#<current|previous>#<line>`. Identity." }
     podKey: "`<namespace>/<pod>`."
     pod: "The pod's name."
-    namespace: "Its namespace."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
     container: { type: string, description: "current: the container running now. previous: the one before the last restart.", values: [current, previous] }
     line: { type: int, description: "First line of the event in what was read." }
     endLine: { type: int, description: "Last line of the event." }
     content: "The event's whole text."
-    timestamp: "When, as the log wrote it."
-    level: "The level as written."
-    severity: "The level on one scale: ERROR, WARN, INFO, DEBUG, TRACE."
+    timestamp: "When the event was logged, as the application's log layout wrote it (often local time, no zone); not normalised. Empty when the line has none."
+    level: "The log level exactly as the line wrote it (ERROR, error, E, WARNING…); compare `severity` for one scale."
+    severity: "The level on one scale, upper case: ERROR, WARN, INFO, DEBUG or TRACE. Empty when the line names no level."
     thread: "The thread, where the layout shows it."
     logger: "The logger, where the layout shows it."
     message: "The message on the event's first line."
     hasTrace: { type: boolean, description: "True when the event logged a stack trace." }
     exception: "The exception thrown, where the event logged one."
-    exceptionMessage: "Its message."
+    exceptionMessage: "The thrown exception's message, the text after its class name; empty when thrown with none."
     rootCause: "The exception at the bottom of the cause chain."
     causes: { cardinality: LIST, description: "The causes, in order." }
     frameCount: { type: int, description: "Frames printed across the trace." }

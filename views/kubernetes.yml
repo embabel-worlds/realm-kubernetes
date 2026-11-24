@@ -2,13 +2,14 @@
 
 - name: KubeRunning
   description: >-
-    SELECT THIS for "what is running in this namespace", "which version is deployed", "how many
+    What runs in a namespace, by application and version, with pod health. SELECT THIS for "what is running in this namespace", "which version is deployed", "how many
     pods is it on", "is the new version out". What runs in a namespace, by application and version:
     the image, how many pods run it, how many are ready, how many have restarted and how many are
     crash-looping. Two rows for one application are two versions running side by side: a rollout in
-    progress, or one that is stuck.
+    progress, or one that is stuck. Pods only, as they are now: not what ran before a rollout,
+    and not jobs that have finished and been removed.
   params:
-    namespace: { type: string, description: "The namespace." }
+    namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
   cypher: |
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_POD]->(p:KubePod)
     RETURN p.app AS app, p.version AS version, p.image AS image, p.imageDigest AS imageDigest,
@@ -20,12 +21,12 @@
 
 - name: KubeIsRunning
   description: >-
-    SELECT THIS for "is this commit running anywhere", "is this version deployed", "how many pods
+    Whether a commit, release or image digest runs in a namespace, and where. SELECT THIS for "is this commit running anywhere", "is this version deployed", "how many pods
     run this build". The pods of a namespace whose version label, image tag or image digest starts
     with what is given: a commit, a release, a digest. No rows means it is not running there.
   params:
-    namespace: { type: string, description: "The namespace." }
-    version: { type: string, description: "The start of a commit hash, a release or an image digest, as the pods name it." }
+    namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
+    version: { type: string, required: true, description: "A PREFIX match, case-sensitive: the start of a commit hash, a release or an image digest (sha256:…), as the pods name it." }
   cypher: |
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_POD]->(p:KubePod)
     WHERE p.version STARTS WITH $version OR p.imageTag STARTS WITH $version OR p.imageDigest STARTS WITH $version
@@ -35,13 +36,13 @@
 
 - name: KubeCrashes
   description: >-
-    SELECT THIS for "which pods are crashing", "why did the pod restart", "what is crash-looping",
+    The pods of a namespace that restarted or are not ready, and why. SELECT THIS for "which pods are crashing", "why did the pod restart", "what is crash-looping",
     "was anything killed for memory". The pods of a namespace that have restarted or are not ready:
     the version and image each runs, how often it restarted, what it is waiting on, why its
     container last stopped (Error, OOMKilled), the exit code, when, and the end of what it wrote
     when the cluster kept that. The container's full previous log is not read here.
   params:
-    namespace: { type: string, description: "The namespace." }
+    namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
   cypher: |
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_POD]->(p:KubePod)
     WHERE coalesce(p.restarts, 0) > 0 OR NOT coalesce(p.ready, false)
@@ -53,11 +54,12 @@
 
 - name: KubeDeployments
   description: >-
-    SELECT THIS for "are the deployments healthy", "is a rollout stuck", "what is under its replica
+    Each deployment of a namespace: wanted, ready and rolled-out replicas. SELECT THIS for "are the deployments healthy", "is a rollout stuck", "what is under its replica
     count". Each deployment of a namespace: the version and image it is rolling out, how many pods
-    it wants, how many are ready and how many run the newest rollout.
+    it wants, how many are ready and how many run the newest rollout. Deployments only:
+    StatefulSets, DaemonSets and Jobs are not read.
   params:
-    namespace: { type: string, description: "The namespace." }
+    namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
   cypher: |
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_DEPLOYMENT]->(d:KubeDeployment)
     RETURN d.name AS deployment, d.version AS version, d.image AS image, d.revision AS revision,
@@ -67,11 +69,11 @@
 
 - name: KubeWarnings
   description: >-
-    SELECT THIS for "what has gone wrong in this namespace lately", "why is the pod not ready",
+    The warning events the cluster recorded in a namespace, newest first. SELECT THIS for "what has gone wrong in this namespace lately", "why is the pod not ready",
     "what does Kubernetes say". The warnings the cluster recorded in a namespace, newest first:
     the reason, the object, the message and how often. The cluster keeps about an hour of events.
   params:
-    namespace: { type: string, description: "The namespace." }
+    namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
     limit: { type: int, default: 50, description: "How many warnings to return, newest first." }
   cypher: |
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_EVENT]->(e:KubeEvent {isWarning: true})
@@ -82,13 +84,13 @@
 
 - name: KubeLogFailures
   description: >-
-    SELECT THIS for "what is failing in this namespace", "which exceptions are the pods logging",
+    The exceptions the pods of a namespace are logging, counted per failure. SELECT THIS for "what is failing in this namespace", "which exceptions are the pods logging",
     "why is this pod crashing". The failures the pods of a namespace logged, the same failure
     counted once: the exception, its root cause, how many times, on how many pods, at which
     versions, and whether it is in running containers or in ones that crashed. Read from the
     cluster now; the last 5,000 lines of each pod.
   params:
-    namespace: { type: string, description: "The namespace." }
+    namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
     app: { type: string, default: "", description: "Only pods of this application (the app label). Empty for all." }
   cypher: |
     MATCH (n:KubeNamespace {name: $namespace})-[:HAS_POD]->(p:KubePod)

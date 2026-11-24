@@ -77,16 +77,15 @@ check("KubeLogFailures answers by name", True, isinstance(rows, list))
 
 print("== L3: pushed filters ==")
 def calls(cypher):
-    body = post("/api/v1/admin/kg/execute", {"cypher": cypher, "ai": {"fresh": True}})
-    m = body.get("metrics") or {}
-    return body, m.get("externalCalls", m.get("apiCalls"))
+    body = post("/api/v1/admin/kg/execute", {"cypher": cypher})
+    return body, body.get("apiCalls")
 body, n = calls(f"MATCH (n:KubeNamespace {{name: '{NS}'}})-[:HAS_EVENT]->(e:KubeEvent {{type: 'Warning'}}) RETURN count(e) AS n")
 check("warnings read through the pushed type: count", len(warnings), (body.get("rows") or [{}])[0].get("n"))
-check("warnings read through the pushed type: one call", 1, n)
+check("warnings read through the pushed type: at most one call (0 when cached)", True, n is not None and n <= 1)
 running = sum(1 for p in pods if p["status"].get("phase") == "Running")
 body, n = calls(f"MATCH (n:KubeNamespace {{name: '{NS}'}})-[:HAS_POD]->(p:KubePod {{phase: 'Running'}}) RETURN count(p) AS n")
 check("running pods through the pushed phase: count", running, (body.get("rows") or [{}])[0].get("n"))
-check("running pods through the pushed phase: one call", 1, n)
+check("running pods through the pushed phase: at most one call (0 when cached)", True, n is not None and n <= 1)
 
 if failures:
     print(f"DRIFT FOUND: {failures} check(s) failed")

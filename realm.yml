@@ -1,5 +1,6 @@
 name: kubernetes
 description: |
+  Kubernetes pods, deployments, events and pod logs, read live from the cluster's API per namespace.
   A Kubernetes cluster as a graph you can query, read live from the cluster's own API when a
   question reaches it: what is running in a namespace, on how many pods, at which image and
   version, which pods are crashing and why, and what the cluster says went wrong.
@@ -14,7 +15,7 @@ description: |
 
   A pod carries the image it runs by digest and the version its labels claim, which is how a
   running container is traced to the commit that built it.
-version: 0.1.0
+version: 0.1.1
 maturity: experimental
 url: https://github.com/embabel-worlds/realm-kubernetes
 author: Rod Johnson

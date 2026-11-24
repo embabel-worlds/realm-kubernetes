@@ -16,6 +16,11 @@
   keyArgs: [namespace]
   echoKeyAs: namespaceKey
   maxKeysPerCall: 1
+  # The list call takes ONE fieldSelector; a second rule on it would overwrite the first, so the
+  # one pushed is the pod's phase ("the running pods"). The app label is not pushed: `app` is
+  # either of two labels, and a labelSelector names one, so it would drop pods carrying the other.
+  pushdown:
+    - { property: phase, op: EQUALS, argPath: fieldSelector, clause: "status.phase={value}" }
   project:
     id: metadata.uid
     name: metadata.name
@@ -57,6 +62,9 @@
   keyArgs: [namespace]
   echoKeyAs: namespaceKey
   maxKeysPerCall: 1
+  # A deployment by name is one record, not the namespace's list.
+  pushdown:
+    - { property: name, op: EQUALS, argPath: fieldSelector, clause: "metadata.name={value}" }
   project:
     id: metadata.uid
     name: metadata.name
@@ -82,6 +90,9 @@
   keyArgs: [namespace]
   echoKeyAs: namespaceKey
   maxKeysPerCall: 1
+  # Warnings are what a question about a namespace wants; events support fieldSelector on type.
+  pushdown:
+    - { property: type, op: EQUALS, argPath: fieldSelector, clause: "type={value}" }
   project:
     id: metadata.uid
     namespace: metadata.namespace
@@ -113,6 +124,9 @@
   keyArgs: [namespace, name]
   echoKeyAs: podKey
   maxKeysPerCall: 1
+  # The log endpoint takes only a relative window (sinceSeconds) and a line count: no literal
+  # predicate on an event maps to either.
+  pushdown: []
   body: events
   records: "$[*]"
   args:
@@ -130,6 +144,9 @@
   keyArgs: [namespace, name]
   echoKeyAs: podKey
   maxKeysPerCall: 1
+  # The log endpoint takes only a relative window (sinceSeconds) and a line count: no literal
+  # predicate on an event maps to either.
+  pushdown: []
   body: events
   records: "$[*]"
   args:

@@ -76,7 +76,7 @@
     namespace: { type: string, required: true, description: "The namespace's name, exactly as the cluster spells it (lower case)." }
     limit: { type: int, default: 50, description: "How many warnings to return, newest first." }
   cypher: |
-    MATCH (n:KubeNamespace {name: $namespace})-[:HAS_EVENT]->(e:KubeEvent {isWarning: true})
+    MATCH (n:KubeNamespace {name: $namespace})-[:HAS_EVENT]->(e:KubeEvent {type: 'Warning'})
     RETURN e.at AS at, e.reason AS reason, e.involvedKind AS kind, e.involvedName AS name,
            e.count AS times, e.message AS message
     ORDER BY at DESC

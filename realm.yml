@@ -16,7 +16,7 @@ description: |
 
   A pod carries the image it runs by digest and the version its labels claim, which is how a
   running container is traced to the commit that built it.
-version: 0.2.3
+version: 0.2.4
 maturity: experimental
 url: https://github.com/embabel-worlds/realm-kubernetes
 author: Rod Johnson

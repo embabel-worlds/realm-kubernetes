@@ -250,6 +250,8 @@
   records: "$[*]"
   args:
     tailLines: 5000
+  # A container that has written nothing yet answers 200 with no body: an empty log, not an error.
+  emptyErrorPatterns: ["Empty response body"]
   compute:
     id: "r.podKey + '#current#' + toString(r.line)"
     container: "'current'"
@@ -268,7 +270,10 @@
   args:
     tailLines: 5000
     previous: true
-  emptyErrorPatterns: ["previous terminated container", "not found"]
+  # A pod that never restarted answers 400 "previous terminated container … not found"; one whose
+  # previous container wrote nothing answers 200 with NO body, which the engine reports as an error
+  # ("Empty response body") rather than as zero events (me#4292). Both are an empty log.
+  emptyErrorPatterns: ["previous terminated container", "not found", "Empty response body"]
   compute:
     id: "r.podKey + '#previous#' + toString(r.line)"
     container: "'previous'"

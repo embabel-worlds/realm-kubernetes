@@ -32,6 +32,14 @@ list, not memory, is the set of things an application realm may `requires:`; the
 the lower bound you declare. A realm that is not in it does not exist for this world, however
 useful you remember it being.
 
+**Installed is not the boundary; installable is.** The query returns the whole store, and a realm
+with `installed: false` is one `install_realm` call away: pass its `source` (or `owner/repo`),
+and it is cloned and loaded. Two refusals are normal and are not yours to work around: a realm that
+declares itself experimental, and one that needs other realms first. Both answer "only the owner can
+confirm this"; collect every such realm into ONE list for the owner to confirm in the console's
+Realm Store, with the one-line reason you want each, and run the catalogue query again once they
+have. Install only what an answer below justified: the store is not a shopping trip.
+
 Then interview the owner. Every answer is matched against the catalogue you just read: which realm's
 description answers this, what it would say about this application, and what grant it costs. Bring
 in every realm the answers justify, and write the answers and the matches in the realm's README,
@@ -60,7 +68,8 @@ realm.
 ## The composition, once the interview is done
 
 - `requires:` names each realm you bring in, by Maven range, lower bound the version the catalogue
-  query showed.
+  query showed. A required realm must be installed before yours: `realm_install` refuses otherwise,
+  and names what is missing.
 - **Anchors**, pinned once as node views, so every query names the application's identities by
   one label: its namespace, its repository, its code project, its CI workflows, each pinned with
   the identity property the brought-in realm's type declares (`query_guide` shows it).

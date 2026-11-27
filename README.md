@@ -16,8 +16,18 @@ KubeNamespace ─HAS_POD▶ KubePod ─HAS_CONTAINER▶ KubeContainer
                                  ─HAS_LOG_EVENT▶ KubeLogEvent
                                  ─HAS_PREVIOUS_LOG_EVENT▶ KubeLogEvent
               ─HAS_DEPLOYMENT▶ KubeDeployment
+              ─HAS_STATEFUL_SET▶ KubeStatefulSet
+              ─HAS_SERVICE▶ KubeService
+              ─HAS_ENDPOINT_SLICE▶ KubeEndpointSlice
+              ─HAS_INGRESS▶ KubeIngress
               ─HAS_EVENT▶ KubeEvent
 ```
+
+Routing is read as the cluster resolves it, not guessed from names: a `KubeService` names its pods by
+selector, the cluster turns that into `KubeEndpointSlice`s that name the pods and count the ready ones,
+and a `KubeIngress` names the services it routes to. Workloads carry the
+standard application labels (`instance`, `component`, `partOf`) so a namespace groups into
+applications by what its author declared.
 
 Read-only. It makes list calls and reads pod logs, and nothing else; it never changes the cluster and never reads
 a Secret.
@@ -31,6 +41,11 @@ a Secret.
 | `KubeCrashes(namespace)` | which pods restarted or are not ready, and why: stop reason, exit code, out of memory, memory limit |
 | `KubeDeployments(namespace)` | wanted, ready and updated replicas; whether a rollout is stuck |
 | `KubeWarnings(namespace)` | what the cluster says went wrong lately |
+| `KubeLogFailures(namespace, app)` | the failures the pods logged, the same failure counted once |
+| `KubeServices(namespace)` | each service, its ports and selector, and how many pods answer for it right now |
+| `KubeStatefulSets(namespace)` | the stateful workloads (databases, queues, caches): wanted, ready, rolled out |
+| `KubeIngresses(namespace)` | how the namespace is reached from outside: hosts, paths, backend services |
+| `KubeComponents(namespace)` | the workloads grouped into applications by `app.kubernetes.io/instance` and `component`, with the services fronting each |
 
 Two rows for one application in `KubeRunning` are two versions side by side: a rollout in progress,
 or one that is stuck.
@@ -54,6 +69,23 @@ kubectl create clusterrolebinding embabel-reader-view --clusterrole=view --servi
 kubectl create token embabel-reader -n shop --duration=720h
 ```
 
+To scope it to one namespace instead, bind `view` with a RoleBinding in that namespace and add a
+ClusterRole that may only `get` and `list` namespaces (the realm checks its token by listing them):
+
+```sh
+kubectl create rolebinding embabel-reader-view -n shop --clusterrole=view --serviceaccount=shop:embabel-reader
+kubectl create clusterrole embabel-namespace-lister --verb=get,list --resource=namespaces
+kubectl create clusterrolebinding embabel-reader-namespaces --clusterrole=embabel-namespace-lister --serviceaccount=shop:embabel-reader
+```
+
+An appliance running in Docker beside a kind cluster reaches the API server by joining the `kind`
+network (`docker network connect kind <worlds container>`). Give it the control-plane container's
+IPv4 address, `https://172.18.0.2:6443` or whatever `docker inspect <control-plane> -f
+'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'` prints, which is in the server certificate's
+SANs: the container's NAME resolves to its IPv6 address on the kind network, which the appliance's
+JVM then tries first and cannot reach, and `host.docker.internal` is not in the certificate at all.
+The join does not survive the container being recreated; repeat it after `embabel up`.
+
 ## Tracing a pod to its commit
 
 A pod carries `imageDigest` (the exact image running) and `version` (the label
@@ -76,3 +108,9 @@ Against a k3s cluster running two versions of an application, one crash-looping:
 `KubeRunning`, `KubeCrashes`, `KubeIsRunning` and `KubeDeployments` equalled what `kubectl` reported
 (pods per version, ready, restart count, waiting reason, wanted/ready/updated replicas), and the
 read-only token was refused when asked for Secrets.
+
+0.2.0, against a kind cluster running the AWS retail sample (10 workloads, 10 services, 3 stateful
+sets, no ingress): `KubeServices`, `KubeStatefulSets`, `KubeComponents` and `KubeIngresses` equalled
+`kubectl` on every service, type, endpoint and ready-endpoint count, every stateful set, and every
+workload's grouping labels; the namespace-scoped reader token was refused on another namespace's
+pods, on Secrets, and on the service proxy (realm-retail-store `tests/verify.py`, 2026-11-27).

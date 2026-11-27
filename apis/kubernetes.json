@@ -3,7 +3,7 @@
  "info": {
   "title": "Kubernetes API, the read-only part this realm calls",
   "version": "1.31",
-  "description": "Five list operations and one log read of the Kubernetes API, written by hand from the API reference. The cluster's own /openapi/v3 is far larger; a realm names the calls it makes."
+  "description": "Nine list operations and one log read of the Kubernetes API, written by hand from the API reference. The cluster's own /openapi/v3 is far larger; a realm names the calls it makes."
  },
  "servers": [
   {
@@ -222,6 +222,214 @@
    "get": {
     "operationId": "kubeListReplicaSets",
     "summary": "The replica sets of one namespace: one per rollout of a deployment.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/namespaces/{namespace}/services": {
+   "get": {
+    "operationId": "kubeListServices",
+    "summary": "The services of one namespace: type, ports, cluster IP and the pod selector each routes to.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/apis/discovery.k8s.io/v1/namespaces/{namespace}/endpointslices": {
+   "get": {
+    "operationId": "kubeListEndpointSlices",
+    "summary": "The endpoint slices of one namespace: which pods each service resolves to right now, and whether each is ready.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/apis/apps/v1/namespaces/{namespace}/statefulsets": {
+   "get": {
+    "operationId": "kubeListStatefulSets",
+    "summary": "The stateful sets of one namespace, with replica counts and revisions.",
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "labelSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fieldSelector",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A Kubernetes list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/List"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/apis/networking.k8s.io/v1/namespaces/{namespace}/ingresses": {
+   "get": {
+    "operationId": "kubeListIngresses",
+    "summary": "The ingresses of one namespace: hosts, paths and the services they route to.",
     "parameters": [
      {
       "name": "namespace",

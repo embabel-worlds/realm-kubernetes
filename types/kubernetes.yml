@@ -3,16 +3,32 @@
 #
 #   KubeNamespace ─HAS_POD▶ KubePod ─HAS_CONTAINER▶ KubeContainer
 #                 ─HAS_DEPLOYMENT▶ KubeDeployment
+#                 ─HAS_STATEFUL_SET▶ KubeStatefulSet
+#                 ─HAS_SERVICE▶ KubeService
+#                 ─HAS_ENDPOINT_SLICE▶ KubeEndpointSlice
+#                 ─HAS_INGRESS▶ KubeIngress
 #                 ─HAS_EVENT▶ KubeEvent
 #   KubePod ─HAS_LOG_EVENT▶ KubeLogEvent            (what the running container wrote)
 #           ─HAS_PREVIOUS_LOG_EVENT▶ KubeLogEvent   (what the container before the last restart wrote)
 #
 # Which cluster is set once per world (KUBERNETES_API_SERVER), not per query.
+#
+# Routing is deterministic and comes from three lists. A Service names the pods it fronts by a label
+# selector; the cluster resolves that selector into EndpointSlices, one endpoint per pod, each saying
+# whether the pod is ready; an Ingress names the Services it routes hosts and paths to. So "which pods
+# answer for the carts service right now" is KubeService → KubeEndpointSlice (same `service` name),
+# whose `pods` are KubePod names, with no guessing from names.
+#
+# Grouping into applications uses the standard labels and nothing else: `app` is
+# app.kubernetes.io/name, `instance` is app.kubernetes.io/instance (one deployed copy of an
+# application, which is what a Helm release stamps), `component` is app.kubernetes.io/component (the
+# role a workload plays in it: service, database, cache), `partOf` is app.kubernetes.io/part-of. A
+# workload without them has empty strings, never an invented group.
 
 - name: KubeNamespace
   visibility: internal
   userAnchor: false
-  description: "A namespace of the cluster this world reads, as a door onto what runs in it. Pin it ONLY as one literal {name:'shop'} and traverse HAS_POD, HAS_DEPLOYMENT or HAS_EVENT. It is not stored and does not need to exist in the graph."
+  description: "A namespace of the cluster this world reads, as a door onto what runs in it. Pin it ONLY as one literal {name:'shop'} and traverse HAS_POD, HAS_DEPLOYMENT, HAS_STATEFUL_SET, HAS_SERVICE, HAS_ENDPOINT_SLICE, HAS_INGRESS or HAS_EVENT. It is not stored and does not need to exist in the graph."
   properties:
     name: { identity: true, description: "The namespace's name. Identity." }
 
@@ -30,6 +46,9 @@
     name: "The pod's name."
     namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
     app: "The application it belongs to: the label app.kubernetes.io/name, else `app`."
+    instance: "The deployed copy of the application it belongs to: the label app.kubernetes.io/instance, which a Helm release stamps on everything it installs. Empty when unlabelled."
+    component: "The role it plays in its application: the label app.kubernetes.io/component (service, database, cache, as the author named it). Empty when unlabelled."
+    partOf: "The larger application this one is part of: the label app.kubernetes.io/part-of. Empty when unlabelled."
     workload: "The Deployment (or other owner) that made it, by name."
     ownerKind: "The kind of the pod's first owner, as Kubernetes names it: ReplicaSet (a Deployment's), StatefulSet, DaemonSet, Job, Node (a static pod); not exhaustive. Empty for a bare pod."
     ownerName: "The owner's name; for a Deployment's pod, the ReplicaSet of one rollout."
@@ -102,6 +121,9 @@
     name: "The deployment's name."
     namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
     app: "The application: the label app.kubernetes.io/name, else `app`."
+    instance: "The deployed copy of the application: the label app.kubernetes.io/instance. Empty when unlabelled."
+    component: "The role it plays in its application: the label app.kubernetes.io/component. Empty when unlabelled."
+    partOf: "The larger application this one is part of: the label app.kubernetes.io/part-of. Empty when unlabelled."
     version: "The version label on the pods it is rolling out now."
     image: "The image it is rolling out now."
     revision: "The rollout's number."
@@ -120,6 +142,111 @@
       producer: kubeDeployments
       maxFanoutTotal: 2000
       description: "The deployments of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_DEPLOYMENT]->(d:KubeDeployment)`."
+
+- name: KubeStatefulSet
+  description: "One StatefulSet, identified by its uid (`id`); `name` is unique within its namespace. The workload shape databases, queues and caches run as: how many replicas it wants, how many are ready and how many run the newest revision, and the image and version it runs. Reached from (:KubeNamespace {name})-[:HAS_STATEFUL_SET]->. Its pods are named `<name>-0`, `<name>-1`, in order."
+  properties:
+    id: { identity: true, description: "The stateful set's uid. Identity." }
+    name: "The stateful set's name."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
+    app: "The application: the label app.kubernetes.io/name, else `app`."
+    instance: "The deployed copy of the application: the label app.kubernetes.io/instance. Empty when unlabelled."
+    component: "The role it plays in its application: the label app.kubernetes.io/component (mysql, postgresql, rabbitmq, as the author named it). Empty when unlabelled."
+    partOf: "The larger application this one is part of: the label app.kubernetes.io/part-of. Empty when unlabelled."
+    version: "The version label on the pods it runs now."
+    image: "The image its first container runs, as written: name and tag."
+    serviceName: "The headless Service that gives its pods stable names."
+    replicas: { type: int, description: "How many pods it wants." }
+    readyReplicas: { type: int, description: "How many are ready." }
+    updatedReplicas: { type: int, description: "How many run the newest revision." }
+    availableReplicas: { type: int, description: "How many are available." }
+    currentRevision: "The revision most pods run."
+    updateRevision: "The newest revision; equal to currentRevision when the rollout is complete."
+    rolledOut: { type: boolean, description: "True when every wanted pod runs the newest revision and is ready." }
+    createdAt: "When the cluster created it, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z)."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_STATEFUL_SET
+      keyField: name
+      recordKeyField: namespaceKey
+      producer: kubeStatefulSets
+      maxFanoutTotal: 2000
+      description: "The stateful sets of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_STATEFUL_SET]->(s:KubeStatefulSet)`."
+
+- name: KubeService
+  description: "One Service, identified by its uid (`id`); `name` is unique within its namespace and is the DNS name other pods call it by. A stable address in front of a set of pods: its type (ClusterIP is reachable inside the cluster only; NodePort and LoadBalancer also from outside), its ports, and the label selector that chooses its pods. Reached from (:KubeNamespace {name})-[:HAS_SERVICE]->. Which pods it resolves to right now, and whether they are ready, is the KubeEndpointSlice with the same `service` name; `selectorApp`, `selectorInstance` and `selectorComponent` say which workload it fronts by label."
+  properties:
+    id: { identity: true, description: "The service's uid. Identity." }
+    name: "The service's name, which is its DNS name in the namespace."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
+    app: "The application: the label app.kubernetes.io/name, else `app`."
+    instance: "The deployed copy of the application: the label app.kubernetes.io/instance. Empty when unlabelled."
+    component: "The role of the workload it fronts, from its own labels: app.kubernetes.io/component. Empty when unlabelled."
+    type: { type: string, description: "How the service is exposed, exactly as Kubernetes names it.", values: [ClusterIP, NodePort, LoadBalancer, ExternalName] }
+    clusterIP: "The virtual IP inside the cluster; `None` for a headless service, whose DNS name resolves to its pods directly."
+    externalName: "For an ExternalName service, the DNS name it aliases; empty otherwise."
+    ports: { cardinality: LIST, description: "The ports it serves, each as `<port>/<protocol>` (`80/TCP`)." }
+    port: { type: int, description: "Its first port, which is the one a one-port service is called on." }
+    targetPort: "What the first port forwards to on the pod: a number or a named container port (`http`)."
+    nodePort: { type: int, description: "The node port of the first port, for a NodePort or LoadBalancer service; null otherwise." }
+    selector: "The label selector that chooses its pods, as `key=value` pairs joined by commas; empty for a service with no selector (one whose endpoints are managed by hand or an ExternalName)."
+    selectorApp: "The app.kubernetes.io/name the selector asks for; empty when it does not."
+    selectorInstance: "The app.kubernetes.io/instance the selector asks for; empty when it does not."
+    selectorComponent: "The app.kubernetes.io/component the selector asks for; empty when it does not."
+    loadBalancerAddresses: { cardinality: LIST, description: "The external IPs or hostnames a LoadBalancer service was given; empty while pending, and on a cluster with no load balancer." }
+    createdAt: "When the cluster created it, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z)."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_SERVICE
+      keyField: name
+      recordKeyField: namespaceKey
+      producer: kubeServices
+      maxFanoutTotal: 2000
+      description: "The services of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_SERVICE]->(s:KubeService)`."
+
+- name: KubeEndpointSlice
+  description: "One EndpointSlice, identified by its uid (`id`): the cluster's own resolution of a Service's selector into pods, right now. `service` names the KubeService it belongs to; `pods` are the KubePod names it points at and `readyEndpoints` how many of them take traffic. A service with no endpoints, or none ready, has an address that nothing answers on. Reached from (:KubeNamespace {name})-[:HAS_ENDPOINT_SLICE]->. A large service has several slices."
+  properties:
+    id: { identity: true, description: "The slice's uid. Identity." }
+    name: "The slice's name, generated by the cluster from the service's."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
+    service: "The Service this slice resolves: the label kubernetes.io/service-name, equal to a KubeService.name in the same namespace."
+    addressType: { type: string, description: "The kind of address the endpoints carry.", values: [IPv4, IPv6, FQDN] }
+    ports: { cardinality: LIST, description: "The pod ports the service's ports are forwarded to, each as `<port>/<protocol>`." }
+    endpoints: { type: int, description: "How many endpoints the slice holds: pods the selector matched, ready or not." }
+    readyEndpoints: { type: int, description: "How many of them are ready to take traffic. 0 with endpoints > 0 is a service whose pods are all failing their readiness checks." }
+    pods: { cardinality: LIST, description: "The names of the pods the endpoints point at." }
+    lastChangedAt: "When the endpoints last changed, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z); empty when the cluster did not record it."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_ENDPOINT_SLICE
+      keyField: name
+      recordKeyField: namespaceKey
+      producer: kubeEndpointSlices
+      maxFanoutTotal: 5000
+      description: "The endpoint slices of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_ENDPOINT_SLICE]->(es:KubeEndpointSlice)`; join `es.service` to a KubeService.name, and a pod with `p.name IN es.pods`."
+
+- name: KubeIngress
+  description: "One Ingress, identified by its uid (`id`); `name` is unique within its namespace. HTTP routing from outside the cluster: which hosts and paths it accepts and which Services it sends them to. Reached from (:KubeNamespace {name})-[:HAS_INGRESS]->. `backendServices` are KubeService names in the same namespace. A namespace with no Ingress has none; its services are reached by port-forward, NodePort or a LoadBalancer."
+  properties:
+    id: { identity: true, description: "The ingress's uid. Identity." }
+    name: "The ingress's name."
+    namespace: "The namespace it lives in, the same value as the KubeNamespace it was reached from."
+    className: "The IngressClass that implements it (nginx, traefik, alb); empty when it relies on the cluster's default."
+    hosts: { cardinality: LIST, description: "The hostnames its rules accept; a rule with no host accepts any." }
+    paths: { cardinality: LIST, description: "The URL paths its rules match, in rule order." }
+    backendServices: { cardinality: LIST, description: "The Service names its paths route to, in rule order; each is a KubeService.name in the same namespace." }
+    tls: { type: boolean, description: "True when it terminates TLS for at least one host." }
+    addresses: { cardinality: LIST, description: "The addresses the ingress controller gave it: IPs or hostnames; empty while pending." }
+    createdAt: "When the cluster created it, ISO-8601 date-time in UTC as the cluster reports it (2026-11-05T09:30:00Z)."
+  virtualJoins:
+    - anchorLabel: KubeNamespace
+      relationship: HAS_INGRESS
+      keyField: name
+      recordKeyField: namespaceKey
+      producer: kubeIngresses
+      maxFanoutTotal: 1000
+      description: "The ingresses of ONE namespace: `MATCH (n:KubeNamespace {name:$namespace})-[:HAS_INGRESS]->(i:KubeIngress)`."
 
 - name: KubeEvent
   description: "One event the cluster recorded in a namespace, identified by its uid (`id`): what it did or what went wrong, to which object, and how often. Reached from (:KubeNamespace {name})-[:HAS_EVENT]->. THE WINDOW: a cluster keeps events for about an hour, so this is recent history only. `isWarning` true is what went wrong: BackOff, Unhealthy, FailedScheduling, OOMKilling."

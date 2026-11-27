@@ -105,3 +105,87 @@
            count(DISTINCT p.name) AS pods, collect(DISTINCT p.version) AS versions,
            collect(DISTINCT e.container) AS containers, max(e.timestamp) AS lastSeen
     ORDER BY occurrences DESC
+
+- name: KubeServices
+  description: >-
+    SELECT THIS for "which services are in this namespace", "what does the carts service route to",
+    "is anything answering for this service", "which service has no ready pods". Each Service of a
+    namespace with its type, ports and selector, joined to the cluster's own resolution of that
+    selector: how many pods it points at right now and how many of them are ready. `readyEndpoints` 0
+    is an address nothing answers on. A headless service (clusterIP None) is how a stateful set's
+    pods get stable names. Read from the cluster now.
+  params:
+    namespace: { type: string, description: "The namespace." }
+  cypher: |
+    MATCH (n:KubeNamespace {name: $namespace})-[:HAS_SERVICE]->(s:KubeService)
+    OPTIONAL MATCH (n)-[:HAS_ENDPOINT_SLICE]->(es:KubeEndpointSlice)
+    WHERE es.service = s.name
+    WITH s, sum(coalesce(es.endpoints, 0)) AS endpoints, sum(coalesce(es.readyEndpoints, 0)) AS readyEndpoints,
+         reduce(acc = [], x IN collect(es.pods) | acc + x) AS pods
+    RETURN s.name AS service, s.type AS type, s.clusterIP AS clusterIP, s.ports AS ports,
+           s.selectorInstance AS instance, s.selectorComponent AS component, s.selector AS selector,
+           endpoints, readyEndpoints, pods, s.loadBalancerAddresses AS externalAddresses
+    ORDER BY readyEndpoints, service
+
+- name: KubeStatefulSets
+  description: >-
+    SELECT THIS for "are the databases up", "is the stateful set ready", "which stateful workloads
+    are in this namespace". Each StatefulSet of a namespace: the image and version it runs, how many
+    pods it wants, how many are ready, and whether it is fully rolled out. Databases, queues and
+    caches deployed in-cluster are usually stateful sets, so this is where "is the database running"
+    is answered. Read from the cluster now.
+  params:
+    namespace: { type: string, description: "The namespace." }
+  cypher: |
+    MATCH (n:KubeNamespace {name: $namespace})-[:HAS_STATEFUL_SET]->(s:KubeStatefulSet)
+    RETURN s.name AS statefulSet, s.instance AS instance, s.component AS component, s.version AS version,
+           s.image AS image, s.replicas AS wanted, coalesce(s.readyReplicas, 0) AS ready,
+           coalesce(s.updatedReplicas, 0) AS updated, s.rolledOut AS rolledOut, s.serviceName AS headlessService
+    ORDER BY rolledOut, statefulSet
+
+- name: KubeIngresses
+  description: >-
+    SELECT THIS for "how is this namespace reached from outside", "which hosts route where", "is there
+    an ingress". Each Ingress of a namespace: its class, the hosts and paths it accepts, the services
+    it routes them to, whether it terminates TLS, and the addresses it was given. A namespace with no
+    Ingress answers no rows; its services are then reached by port-forward, NodePort or a LoadBalancer
+    service (see KubeServices). Read from the cluster now.
+  params:
+    namespace: { type: string, description: "The namespace." }
+  cypher: |
+    MATCH (n:KubeNamespace {name: $namespace})-[:HAS_INGRESS]->(i:KubeIngress)
+    RETURN i.name AS ingress, i.className AS class, i.hosts AS hosts, i.paths AS paths,
+           i.backendServices AS services, i.tls AS tls, i.addresses AS addresses
+    ORDER BY ingress
+
+- name: KubeComponents
+  description: >-
+    SELECT THIS for "what applications are deployed here", "what are the parts of this application",
+    "group the workloads", "which component is the database". The workloads of a namespace grouped
+    into applications by the standard labels alone: one row per Deployment or StatefulSet, with the
+    application copy it belongs to (app.kubernetes.io/instance), the role it plays in it
+    (app.kubernetes.io/component), its kind, image, version, wanted and ready pods, and the services
+    that front it by selector. Workloads without the labels group under an empty instance, never under
+    a guessed one. Read from the cluster now.
+  params:
+    namespace: { type: string, description: "The namespace." }
+  cypher: |
+    MATCH (n:KubeNamespace {name: $namespace})
+    CALL {
+      WITH n MATCH (n)-[:HAS_DEPLOYMENT]->(d:KubeDeployment)
+      RETURN d.name AS workload, 'Deployment' AS kind, d.app AS app, d.instance AS instance, d.component AS component,
+             d.partOf AS partOf, d.image AS image, d.version AS version, d.replicas AS wanted,
+             coalesce(d.readyReplicas, 0) AS ready, d.rolledOut AS rolledOut
+      UNION
+      WITH n MATCH (n)-[:HAS_STATEFUL_SET]->(st:KubeStatefulSet)
+      RETURN st.name AS workload, 'StatefulSet' AS kind, st.app AS app, st.instance AS instance, st.component AS component,
+             st.partOf AS partOf, st.image AS image, st.version AS version, st.replicas AS wanted,
+             coalesce(st.readyReplicas, 0) AS ready, st.rolledOut AS rolledOut
+    }
+    WITH n, workload, kind, app, instance, component, partOf, image, version, wanted, ready, rolledOut
+    OPTIONAL MATCH (n)-[:HAS_SERVICE]->(s:KubeService)
+    WHERE s.selectorApp = app AND s.selectorInstance = instance AND s.selectorComponent = component
+      AND (app <> '' OR instance <> '' OR component <> '')
+    RETURN instance, component, workload, kind, app, partOf, image, version, wanted, ready, rolledOut,
+           collect(DISTINCT s.name) AS services
+    ORDER BY instance, component, workload

@@ -1,5 +1,5 @@
-# One API: the cluster's own, read-only. The spec is vendored and small on purpose: five list calls,
-# written by hand from the API reference (kubernetes.json). `server-variables` says which cluster
+# One API: the cluster's own, read-only. The spec is vendored and small on purpose: nine list calls
+# and one log read, written by hand from the API reference (kubernetes.json). `server-variables` says which cluster
 # THIS world reads, from KUBERNETES_API_SERVER, which keys.yml asks for when the realm is installed.
 #
 # Auth is a service account's bearer token. Give that account the built-in `view` role in the
@@ -24,4 +24,8 @@
     - kubeListEvents
     - kubeListDeployments
     - kubeListReplicaSets
+    - kubeListStatefulSets
+    - kubeListServices
+    - kubeListEndpointSlices
+    - kubeListIngresses
     - kubeReadPodLog

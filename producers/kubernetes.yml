@@ -31,22 +31,31 @@
     imageId: status.containerStatuses[0].imageID
     ready: status.containerStatuses[0].ready
     restarts: status.containerStatuses[0].restartCount
-    waitingReason: status.containerStatuses[0].state.waiting.reason
-    waitingMessage: status.containerStatuses[0].state.waiting.message
+    waitingReasonRaw: status.containerStatuses[0].state.waiting.reason
+    waitingMessageRaw: status.containerStatuses[0].state.waiting.message
     runningSince: status.containerStatuses[0].state.running.startedAt
     lastStopReason: status.containerStatuses[0].lastState.terminated.reason
     lastExitCode: status.containerStatuses[0].lastState.terminated.exitCode
     lastStoppedAt: status.containerStatuses[0].lastState.terminated.finishedAt
-    lastStopMessage: status.containerStatuses[0].lastState.terminated.message
+    lastStopMessageRaw: status.containerStatuses[0].lastState.terminated.message
     memoryLimit: spec.containers[0].resources.limits.memory
   compute:
     app: "coalesce(r.metadata.labels['app.kubernetes.io/name'], r.metadata.labels['app'], '')"
+    instance: "coalesce(r.metadata.labels['app.kubernetes.io/instance'], '')"
+    component: "coalesce(r.metadata.labels['app.kubernetes.io/component'], '')"
+    partOf: "coalesce(r.metadata.labels['app.kubernetes.io/part-of'], '')"
     version: "coalesce(r.metadata.labels['app.kubernetes.io/version'], '')"
     imageDigest: "CASE WHEN coalesce(r.imageId, '') CONTAINS 'sha256:' THEN 'sha256:' + last(split(r.imageId, 'sha256:')) ELSE '' END"
     imageTag: "CASE WHEN last(split(coalesce(r.image, ''), '/')) CONTAINS ':' THEN last(split(r.image, ':')) ELSE '' END"
     workload: "CASE WHEN r.ownerKind = 'ReplicaSet' AND r.ownerName CONTAINS '-' THEN substring(r.ownerName, 0, size(r.ownerName) - size(last(split(r.ownerName, '-'))) - 1) ELSE coalesce(r.ownerName, '') END"
     logKey: "r.metadata.namespace + '/' + r.metadata.name"
-    crashLooping: "coalesce(r.waitingReason, '') = 'CrashLoopBackOff'"
+    # State-dependent fields are stamped on EVERY record, empty where the state does not apply (a
+    # running container is not waiting), so a healthy namespace does not read as a door that never
+    # asks for them.
+    waitingReason: "coalesce(r.waitingReasonRaw, '')"
+    waitingMessage: "coalesce(r.waitingMessageRaw, '')"
+    lastStopMessage: "coalesce(r.lastStopMessageRaw, '')"
+    crashLooping: "coalesce(r.waitingReasonRaw, '') = 'CrashLoopBackOff'"
     outOfMemory: "coalesce(r.lastStopReason, '') = 'OOMKilled'"
   cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
 
@@ -66,13 +75,137 @@
     readyReplicas: status.readyReplicas
     updatedReplicas: status.updatedReplicas
     availableReplicas: status.availableReplicas
-    unavailableReplicas: status.unavailableReplicas
+    unavailableReplicasRaw: status.unavailableReplicas
     image: spec.template.spec.containers[0].image
   compute:
+    # Kubernetes omits unavailableReplicas when it is zero; 0 is the answer, stamped on every record.
+    unavailableReplicas: "coalesce(r.unavailableReplicasRaw, 0)"
     app: "coalesce(r.metadata.labels['app.kubernetes.io/name'], r.metadata.labels['app'], '')"
+    instance: "coalesce(r.metadata.labels['app.kubernetes.io/instance'], '')"
+    component: "coalesce(r.metadata.labels['app.kubernetes.io/component'], '')"
+    partOf: "coalesce(r.metadata.labels['app.kubernetes.io/part-of'], '')"
     version: "coalesce(r.spec.template.metadata.labels['app.kubernetes.io/version'], '')"
     revision: "coalesce(r.metadata.annotations['deployment.kubernetes.io/revision'], '')"
     rolledOut: "coalesce(r.updatedReplicas, 0) = coalesce(r.replicas, 0) AND coalesce(r.readyReplicas, 0) = coalesce(r.replicas, 0)"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+- name: kubeStatefulSets
+  kind: remote
+  operation: kubeListStatefulSets
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  maxKeysPerCall: 1
+  project:
+    id: metadata.uid
+    name: metadata.name
+    namespace: metadata.namespace
+    createdAt: metadata.creationTimestamp
+    serviceName: spec.serviceName
+    replicas: spec.replicas
+    readyReplicas: status.readyReplicas
+    updatedReplicas: status.updatedReplicas
+    availableReplicas: status.availableReplicas
+    currentRevision: status.currentRevision
+    updateRevision: status.updateRevision
+    image: spec.template.spec.containers[0].image
+  compute:
+    app: "coalesce(r.metadata.labels['app.kubernetes.io/name'], r.metadata.labels['app'], '')"
+    instance: "coalesce(r.metadata.labels['app.kubernetes.io/instance'], '')"
+    component: "coalesce(r.metadata.labels['app.kubernetes.io/component'], '')"
+    partOf: "coalesce(r.metadata.labels['app.kubernetes.io/part-of'], '')"
+    version: "coalesce(r.spec.template.metadata.labels['app.kubernetes.io/version'], '')"
+    rolledOut: "coalesce(r.updatedReplicas, 0) = coalesce(r.replicas, 0) AND coalesce(r.readyReplicas, 0) = coalesce(r.replicas, 0)"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+# A Service's selector is a map of labels; the three standard ones are lifted to their own properties
+# so a view can match a service to the workload it fronts without parsing, and the whole map is kept
+# as `selector` text for the rest.
+- name: kubeServices
+  kind: remote
+  operation: kubeListServices
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  maxKeysPerCall: 1
+  project:
+    id: metadata.uid
+    name: metadata.name
+    namespace: metadata.namespace
+    createdAt: metadata.creationTimestamp
+    type: spec.type
+    clusterIP: spec.clusterIP
+    externalNameRaw: spec.externalName
+    port: spec.ports[0].port
+    targetPortRaw: spec.ports[0].targetPort
+    nodePort: spec.ports[0].nodePort
+    portNumbers: spec.ports[*].port
+    portProtocols: spec.ports[*].protocol
+    loadBalancerIps: status.loadBalancer.ingress[*].ip
+    loadBalancerHostnames: status.loadBalancer.ingress[*].hostname
+  compute:
+    app: "coalesce(r.metadata.labels['app.kubernetes.io/name'], r.metadata.labels['app'], '')"
+    instance: "coalesce(r.metadata.labels['app.kubernetes.io/instance'], '')"
+    component: "coalesce(r.metadata.labels['app.kubernetes.io/component'], '')"
+    partOf: "coalesce(r.metadata.labels['app.kubernetes.io/part-of'], '')"
+    ports: "[i IN range(0, size(coalesce(r.portNumbers, [])) - 1) | toString(r.portNumbers[i]) + '/' + coalesce(r.portProtocols[i], 'TCP')]"
+    targetPort: "toString(coalesce(r.targetPortRaw, ''))"
+    selector: "reduce(acc = '', k IN keys(coalesce(r.spec.selector, {})) | acc + CASE WHEN acc = '' THEN '' ELSE ',' END + k + '=' + r.spec.selector[k])"
+    externalName: "coalesce(r.externalNameRaw, '')"
+    selectorApp: "coalesce(r.spec.selector['app.kubernetes.io/name'], r.spec.selector['app'], '')"
+    selectorInstance: "coalesce(r.spec.selector['app.kubernetes.io/instance'], '')"
+    selectorComponent: "coalesce(r.spec.selector['app.kubernetes.io/component'], '')"
+    loadBalancerAddresses: "[a IN coalesce(r.loadBalancerIps, []) + coalesce(r.loadBalancerHostnames, []) WHERE a IS NOT NULL]"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+# One slice per service (several for a large one); types/ brings each endpoint as a KubeEndpoint
+# from the same fetch, so service → pod is one hop and one call.
+- name: kubeEndpointSlices
+  kind: remote
+  operation: kubeListEndpointSlices
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  maxKeysPerCall: 1
+  project:
+    id: metadata.uid
+    name: metadata.name
+    namespace: metadata.namespace
+    addressType: addressType
+    portNumbers: ports[*].port
+    portProtocols: ports[*].protocol
+    pods: endpoints[*].targetRef.name
+    readyFlags: endpoints[*].conditions.ready
+  compute:
+    service: "coalesce(r.metadata.labels['kubernetes.io/service-name'], '')"
+    lastChangedAt: "coalesce(r.metadata.annotations['endpoints.kubernetes.io/last-change-trigger-time'], '')"
+    ports: "[i IN range(0, size(coalesce(r.portNumbers, [])) - 1) | toString(r.portNumbers[i]) + '/' + coalesce(r.portProtocols[i], 'TCP')]"
+    endpoints: "size(coalesce(r.pods, []))"
+    readyEndpoints: "size([f IN coalesce(r.readyFlags, []) WHERE f = true])"
+  cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
+
+- name: kubeIngresses
+  kind: remote
+  operation: kubeListIngresses
+  records: "$.items[*]"
+  keyArgs: [namespace]
+  echoKeyAs: namespaceKey
+  maxKeysPerCall: 1
+  project:
+    id: metadata.uid
+    name: metadata.name
+    namespace: metadata.namespace
+    createdAt: metadata.creationTimestamp
+    className: spec.ingressClassName
+    hosts: spec.rules[*].host
+    paths: spec.rules[*].http.paths[*].path
+    backendServices: spec.rules[*].http.paths[*].backend.service.name
+    tlsHosts: spec.tls[*].hosts
+    addressIps: status.loadBalancer.ingress[*].ip
+    addressHostnames: status.loadBalancer.ingress[*].hostname
+  compute:
+    tls: "size(coalesce(r.tlsHosts, [])) > 0"
+    addresses: "[a IN coalesce(r.addressIps, []) + coalesce(r.addressHostnames, []) WHERE a IS NOT NULL]"
   cache: { kind: ttl, seconds: 30, negativeTtlSeconds: 30 }
 
 - name: kubeEvents

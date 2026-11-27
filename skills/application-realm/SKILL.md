@@ -1,6 +1,6 @@
 ---
 name: application-realm
-description: "Build an APPLICATION realm over an application that runs in one Kubernetes namespace — the business types read through its own HTTP APIs, the runtime model (which workload serves which capability) as views, performance from Prometheus, reads admitted and writes held back — composed from every realm the owner's answers justify (source, CI, logs, metrics, databases), using what this kubernetes realm already sees. Use when someone points the world at a namespace and asks what the application does, wants to query it in business terms, or says \"a realm for this app\". Works over the MCP door alone: every step is a tool call."
+description: "Build an APPLICATION realm over an application that runs in one Kubernetes namespace — the business types read through its own HTTP APIs, the runtime model (which workload serves which capability) as views, performance from Prometheus, reads admitted and writes held back — composed from whichever realms the appliance's catalogue holds and the owner's answers justify, using what this kubernetes realm already sees. Use when someone points the world at a namespace and asks what the application does, wants to query it in business terms, or says \"a realm for this app\". Works over the MCP door alone: every step is a tool call."
 ---
 
 # An application realm from a Kubernetes namespace
@@ -14,41 +14,56 @@ Three judgements are the owner's and nothing below makes them for you: what each
 the business, which operations WRITE whatever their HTTP method says, and which reads to ADMIT.
 Everything else is mechanical. Write the judgements down where the realm will cite them.
 
-## 0. Interview first: what surrounds this application
+## 0. First, ask the world what it can bring; then ask the owner
 
-Before modelling anything, ask the owner. Every answer is a realm the application realm can
-require, a question it can then answer, and a grant the owner must give. Ask them all; bring in as
-many as the answers justify. Write the answers down in the realm's README, because they are the
-composition's reasons.
+Do not carry a list of realms in your head: the appliance you are on has its own catalogue, and it
+changes. **Run this before anything else**, through `kg_query` or the Cypher door:
 
-| Ask | If yes, bring in | What it answers for this application | The grant |
-|---|---|---|---|
-| Which repository or repositories hold the source, and which directory each service lives in? | `github` (needs `dev-vocabulary`), `git`, `polyglot-code` (needs `code-model`) | which commit built the running image; what changed between two releases; where the code behind a failing endpoint is; who changed it | a read-only GitHub token (prefer a GitHub App installation token, scoped to those repositories) |
-| How are images tagged, and does a tag name a commit? | nothing new; it decides how `KubePod.version` / `imageTag` join to `git` | image → commit with confidence, or "a mutable tag proves nothing" | none |
-| Where does CI run? | `github-actions` | did this image come from a green build; is a red build mine | the same GitHub token |
-| Which services are JVM / Spring Boot? | `spring`, `jvm-logs`, `java-project` | Boot line, endpoints, settings, memory limits; stack traces from the pod logs the kubernetes realm already reads | none beyond the realms |
-| Where do logs go beyond the pods? | `elastic-logs` or `logs` | failures older than the pod's last 5,000 lines | a read-only index user |
-| Is there a Prometheus, a managed metrics endpoint, or metrics on the services? | `prometheus` (deploy one if there is none: a namespaced Prometheus with static targets costs nothing the owner minds) | requests, errors, latency per service; traffic over a window | a token for the door in front of it, scoped to that one service |
-| Which databases sit behind the services, and can a read-only user be issued? | a read-only SQL datasource in the world (a datasource, not a realm), per database, as EVIDENCE | which table holds orders; counts to reconcile the API against | a read-only database user, reachable port; never the application's Secrets |
-| Is there a Sonar or another quality gate? | `sonar`, `code-understanding` | coverage on the file behind a failure | its token |
-| Which failure-to-change question matters most? | `which-change` | a logged failure fingerprint → file → commit → pull request | nothing new |
-| Which business questions matter most, and who owns the answers? | nothing new; it chooses what to admit and which capabilities to name | the three judgements below, made with the owner | none |
+```cypher
+MATCH (r:Realm)
+RETURN r.name AS name, r.installed AS installed, r.version AS version, r.tags AS tags,
+       r.category AS category, r.description AS description
+ORDER BY installed DESC, name
+```
 
-Two rules the answers must respect. **A business user is not made to install the developer
-overlay**: `kubernetes` and `prometheus` are the application realm's hard `requires:`; the source,
-CI and code realms go in a second, developer-facing composition realm that requires the first
-(realm-project-petclinic is the exemplar), so the store's realm installs without a GitHub token.
-**Every token is read-only and scoped**: a namespace, a repository, one service behind a proxy.
-Where the appliance runs in the owner's cloud, say so in the README: keys belong in the platform's
-secret store (Secrets Manager behind an IAM role), read into the wallet, never written into a realm.
+`Realm` is the catalogue door, pinned to the whole store by the engine: every realm this appliance
+can install or has installed, with the description its author wrote. Read every description. That
+list, not memory, is the set of things an application realm may `requires:`; the version shown is
+the lower bound you declare. A realm that is not in it does not exist for this world, however
+useful you remember it being.
+
+Then interview the owner. Every answer is matched against the catalogue you just read: which realm's
+description answers this, what it would say about this application, and what grant it costs. Bring
+in every realm the answers justify, and write the answers and the matches in the realm's README,
+because they are the composition's reasons.
+
+| Ask the owner | What it decides |
+|---|---|
+| Which repository or repositories hold the source, and which directory each service lives in? | the source, history and code realms, if the catalogue has them; the service → directory map every code view needs; a read-only forge token (prefer an App installation token scoped to those repositories) |
+| How are images tagged, and does a tag name a commit? | whether the running pod's `version` / `imageTag` joins to a commit with confidence, or a mutable tag proves nothing |
+| Where does CI run? | the CI realm, if there is one; "did this image come from a green build" |
+| Which frameworks and runtimes are the services on (Spring, Node, Go, …)? | the framework realms, if the catalogue has them: endpoints, settings, stack traces to code |
+| Where do logs go beyond the pods? | a logs realm matching the store (an index, a file tree, a cloud log service); without one, the pods' own logs through this realm (`kubePodLogs`, current and previous container) are the logs |
+| Is there a Prometheus, a managed metrics endpoint, or metrics exported by the services? | a metrics realm; if the services export metrics and nothing scrapes them, a namespaced Prometheus with static targets is cheap to deploy and makes performance queryable |
+| Which databases sit behind the services, and can a read-only user be issued? | a read-only datasource in the world, per database, as EVIDENCE to reconcile the APIs against; never the application's Secrets |
+| Is there a quality gate, a tracing backend, a status page, a ticketing system? | whatever the catalogue holds for each; each is one more join only this application can ask |
+| Which business questions matter most, and who owns the answers? | the three judgements below, made with the owner; nothing to install |
+
+Two rules the matches must respect. **A business user is not made to install the developer
+overlay**: the runtime and metrics realms are the application realm's hard `requires:`; source, CI
+and code realms go in a second, developer-facing composition realm that requires the first, so the
+business realm installs without a forge token. **Every token is read-only and scoped**: a namespace,
+a repository, one service behind a proxy. Where the appliance runs in the owner's cloud, say so in
+the README: keys belong in the platform's secret store, read into the wallet, never written into a
+realm.
 
 ## The composition, once the interview is done
 
-- `requires:` names each realm you bring in, by Maven range, lower bound the version installed now.
+- `requires:` names each realm you bring in, by Maven range, lower bound the version the catalogue
+  query showed.
 - **Anchors**, pinned once as node views, so every query names the application's identities by
-  one label: its repository (`MATCH (r:GitHubRepository {full_name: '…'}) RETURN r`), its code
-  project, its CI workflows, its namespace. Petclinic's `ClinicRepository`, `ClinicCode`,
-  `ClinicHistory`, `ClinicBuild` are the shape.
+  one label: its namespace, its repository, its code project, its CI workflows, each pinned with
+  the identity property the brought-in realm's type declares (`query_guide` shows it).
 - **Cross-realm views only this application can ask**: image → commit (`KubePod.imageTag` to the
   release tag to `git`), a failing capability → the pods → their log failures → `WhichChange`,
   a release → the contract diff. Write only the ones the interview justified.

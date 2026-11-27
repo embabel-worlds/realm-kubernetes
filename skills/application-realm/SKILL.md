@@ -1,6 +1,6 @@
 ---
 name: application-realm
-description: "Build an APPLICATION realm over an application that runs in one Kubernetes namespace — the business types read through its own HTTP APIs, the runtime model (which workload serves which capability) as views, performance from Prometheus, reads admitted and writes held back — composed from whichever realms the appliance's catalogue holds and the owner's answers justify, using what this kubernetes realm already sees. Use when someone points the world at a namespace and asks what the application does, wants to query it in business terms, or says \"a realm for this app\". Works over the MCP door alone: every step is a tool call."
+description: "The Kubernetes annex of the scope-realm skill: build an APPLICATION realm over an application that runs in one Kubernetes namespace — the business types read through its own HTTP APIs, the runtime model (which workload serves which capability) as views, performance from Prometheus, reads admitted and writes held back — composed from whichever realms the appliance's catalogue holds and the owner's answers justify, using what this kubernetes realm already sees. Use when someone points the world at a namespace and asks what the application does, wants to query it in business terms, or says \"a realm for this app\". Works over the MCP door alone: every step is a tool call."
 ---
 
 # An application realm from a Kubernetes namespace
@@ -14,10 +14,17 @@ Three judgements are the owner's and nothing below makes them for you: what each
 the business, which operations WRITE whatever their HTTP method says, and which reads to ADMIT.
 Everything else is mechanical. Write the judgements down where the realm will cite them.
 
-## 0. First, ask the world what it can bring; then ask the owner
+## 0. This is the Kubernetes annex of `scope-realm`
 
-Do not carry a list of realms in your head: the appliance you are on has its own catalogue, and it
-changes. **Run this before anything else**, through `kg_query` or the Cypher door:
+The method that is the same for every scope lives in the `scope-realm` skill (realm-scope): the
+catalogue query before anything else, naming the scope, the owner's interview with every answer
+matched against the catalogue, the composition rules (the business install stays light; every grant
+read-only and scoped), the capability map, testing like an adversary, and the report that says what
+nobody told you. Activate it first when the world has it; what follows is the part only a
+namespace needs: how to look inside one, how its services are reached, and how an application
+realm over it is written. Where this annex and `scope-realm` disagree, `scope-realm` is newer.
+
+If `scope-realm` is not installed, do its step 0 here before going on:
 
 ```cypher
 MATCH (r:Realm)
@@ -26,57 +33,11 @@ RETURN r.name AS name, r.installed AS installed, r.version AS version, r.tags AS
 ORDER BY installed DESC, name
 ```
 
-`Realm` is the catalogue door, pinned to the whole store by the engine: every realm this appliance
-can install or has installed, with the description its author wrote. Read every description. That
-list, not memory, is the set of things an application realm may `requires:`; the version shown is
-the lower bound you declare. A realm that is not in it does not exist for this world, however
-useful you remember it being.
-
-**Installed is not the boundary; installable is.** The query returns the whole store, and a realm
-with `installed: false` is one `install_realm` call away: pass its `source` (or `owner/repo`),
-and it is cloned and loaded. Two refusals are normal and are not yours to work around: a realm that
-declares itself experimental, and one that needs other realms first. Both answer "only the owner can
-confirm this"; collect every such realm into ONE list for the owner to confirm in the console's
-Realm Store, with the one-line reason you want each, and run the catalogue query again once they
-have. Install only what an answer below justified: the store is not a shopping trip.
-
-Then interview the owner. Every answer is matched against the catalogue you just read: which realm's
-description answers this, what it would say about this application, and what grant it costs. Bring
-in every realm the answers justify, and write the answers and the matches in the realm's README,
-because they are the composition's reasons.
-
-| Ask the owner | What it decides |
-|---|---|
-| Which repository or repositories hold the source, and which directory each service lives in? | the source, history and code realms, if the catalogue has them; the service → directory map every code view needs; a read-only forge token (prefer an App installation token scoped to those repositories) |
-| How are images tagged, and does a tag name a commit? | whether the running pod's `version` / `imageTag` joins to a commit with confidence, or a mutable tag proves nothing |
-| Where does CI run? | the CI realm, if there is one; "did this image come from a green build" |
-| Which frameworks and runtimes are the services on (Spring, Node, Go, …)? | the framework realms, if the catalogue has them: endpoints, settings, stack traces to code |
-| Where do logs go beyond the pods? | a logs realm matching the store (an index, a file tree, a cloud log service); without one, the pods' own logs through this realm (`kubePodLogs`, current and previous container) are the logs |
-| Is there a Prometheus, a managed metrics endpoint, or metrics exported by the services? | a metrics realm; if the services export metrics and nothing scrapes them, a namespaced Prometheus with static targets is cheap to deploy and makes performance queryable |
-| Which databases sit behind the services, and can a read-only user be issued? | a read-only datasource in the world, per database, as EVIDENCE to reconcile the APIs against; never the application's Secrets |
-| Is there a quality gate, a tracing backend, a status page, a ticketing system? | whatever the catalogue holds for each; each is one more join only this application can ask |
-| Which business questions matter most, and who owns the answers? | the three judgements below, made with the owner; nothing to install |
-
-Two rules the matches must respect. **A business user is not made to install the developer
-overlay**: the runtime and metrics realms are the application realm's hard `requires:`; source, CI
-and code realms go in a second, developer-facing composition realm that requires the first, so the
-business realm installs without a forge token. **Every token is read-only and scoped**: a namespace,
-a repository, one service behind a proxy. Where the appliance runs in the owner's cloud, say so in
-the README: keys belong in the platform's secret store, read into the wallet, never written into a
-realm.
-
-## The composition, once the interview is done
-
-- `requires:` names each realm you bring in, by Maven range, lower bound the version the catalogue
-  query showed. A required realm must be installed before yours: `realm_install` refuses otherwise,
-  and names what is missing.
-- **Anchors**, pinned once as node views, so every query names the application's identities by
-  one label: its namespace, its repository, its code project, its CI workflows, each pinned with
-  the identity property the brought-in realm's type declares (`query_guide` shows it).
-- **Cross-realm views only this application can ask**: image → commit (`KubePod.imageTag` to the
-  release tag to `git`), a failing capability → the pods → their log failures → `WhichChange`,
-  a release → the contract diff. Write only the ones the interview justified.
-- The skill's table gains a row per realm brought in: moment → view → this application's arguments.
+and ask the owner, all at once: where the source is and how services map to directories; how
+images are tagged; where CI runs; which frameworks; where logs, metrics and traces go; which
+databases and whether a read-only user can be issued; what else touches the application; which
+business questions matter; what must never be done through the world. Match every answer to a
+realm in the catalogue, never to one from memory.
 
 ## 1. What the operator hands you
 
